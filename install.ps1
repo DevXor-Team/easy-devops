@@ -559,48 +559,59 @@ if ($NODE_ACTION -eq "keep") {
   Write-Step "Installing Node.js via nvm"
 
   if ($nvmReady -and (-not $nodeOK -or $NODE_ACTION -eq "upgrade" -or $NODE_ACTION -eq "switch")) {
-    # Spawn a new powershell.exe so nvm/node commands run in a fresh session
-    # that picks up the registry PATH written by the nvm-windows installer.
-    # The current session never sees that PATH update regardless of Refresh-Path.
-    Write-Info "Installing Node.js $NODE_TARGET via nvm (new shell)..."
-    try {
-      & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
-        "nvm install $NODE_TARGET; nvm use $NODE_TARGET"
-    } catch {
-      Write-Warn "Shell error during nvm: $_"
-    }
+    Write-Info "Installing Node.js $NODE_TARGET via nvm..."
+    $nvmExe = Find-NvmExe
+    if (-not $nvmExe) {
+      Write-Warn "nvm not found -- open a new terminal and run: nvm install $NODE_TARGET"
+      Add-Result "Node.js install" $false "nvm not found"
+    } else {
+      # IMPORTANT: do NOT pipe nvm output (2>&1 | ...).
+      # nvm.exe checks if its stdout is a real console; piping makes it think
+      # it is not in a terminal and it shows a GUI dialog instead of running.
+      $nvmRunOK = $true
+      try {
+        & $nvmExe install $NODE_TARGET
+        & $nvmExe use     $NODE_TARGET
+      } catch {
+        Write-Warn "nvm error: $_"
+        Add-Result "Node.js install" $false "nvm error -- see above"
+        $nvmRunOK = $false
+      }
 
-    # Now look for node: try PATH first, then fall back to NVM_SYMLINK from registry
-    Refresh-Path
-    $raw = ""
-    try { $raw = (& node --version 2>&1).Trim() } catch {}
+      if ($nvmRunOK) {
+        # PATH in this session may still be stale after nvm use.
+        # Read NVM_SYMLINK directly from registry and call node.exe by full path.
+        Refresh-Path
+        $raw = ""
+        try { $raw = (& node --version 2>&1).Trim() } catch {}
 
-    if (-not ($raw -match '^v')) {
-      # PATH still stale in this session -- try node.exe directly via registry value
-      $nvmSym = [System.Environment]::GetEnvironmentVariable('NVM_SYMLINK', 'Machine')
-      if (-not $nvmSym) { $nvmSym = [System.Environment]::GetEnvironmentVariable('NVM_SYMLINK', 'User') }
-      if ($nvmSym) {
-        $nodeExe = Join-Path $nvmSym 'node.exe'
-        if (Test-Path $nodeExe -ErrorAction SilentlyContinue) {
-          # Add symlink dir to PATH so npm also works in this session
-          if ($env:Path -notlike "*$([regex]::Escape($nvmSym))*") {
-            $env:Path = "$nvmSym;$env:Path"
+        if (-not ($raw -match '^v')) {
+          $nvmSym = [System.Environment]::GetEnvironmentVariable('NVM_SYMLINK', 'Machine')
+          if (-not $nvmSym) { $nvmSym = [System.Environment]::GetEnvironmentVariable('NVM_SYMLINK', 'User') }
+          if ($nvmSym) {
+            $nodeExe = Join-Path $nvmSym 'node.exe'
+            if (Test-Path $nodeExe -ErrorAction SilentlyContinue) {
+              # Add to PATH so npm also works in the rest of this script
+              if ($env:Path -notlike "*$([regex]::Escape($nvmSym))*") {
+                $env:Path = "$nvmSym;$env:Path"
+              }
+              try { $raw = (& $nodeExe --version 2>&1).Trim() } catch {}
+            }
           }
-          try { $raw = (& $nodeExe --version 2>&1).Trim() } catch {}
+        }
+
+        if ($raw -match '^v') {
+          $nodeVersion = $raw
+          Write-OK "Node.js $nodeVersion installed and active"
+          Add-Result "Node.js install" $true $nodeVersion
+          $nodeOK = $true
+        } else {
+          Write-Warn "Node.js installed but PATH not yet updated in this session"
+          Write-Warn "Open a new terminal and run:  nvm use $NODE_TARGET"
+          Add-Result "Node.js install" $false "PATH refresh needed -- open a new terminal"
+          $nodeOK = $false
         }
       }
-    }
-
-    if ($raw -match '^v') {
-      $nodeVersion = $raw
-      Write-OK "Node.js $nodeVersion installed and active"
-      Add-Result "Node.js install" $true $nodeVersion
-      $nodeOK = $true
-    } else {
-      Write-Warn "Node.js installed but not yet visible in this session"
-      Write-Warn "Open a new terminal -- node and npm will work there"
-      Add-Result "Node.js install" $false "PATH visible in new terminal only"
-      $nodeOK = $false
     }
   } elseif (-not $nvmReady -and $nodeOK) {
     # nvm not available but Node >= 18 already present: skip
