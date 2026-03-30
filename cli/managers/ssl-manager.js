@@ -249,7 +249,6 @@ async function installCertbot() {
 
   // ── Shared helpers ────────────────────────────────────────────────────────────
 
-  // Check multiple possible certbot locations — some methods install to different paths
   async function verifyCertbot() {
     const whereResult = await run('where.exe certbot 2>$null');
     if (whereResult.success && whereResult.stdout.trim()) return true;
@@ -265,43 +264,105 @@ async function installCertbot() {
     return false;
   }
 
-  // Download a file trying Invoke-WebRequest (TLS 1.2 forced) then curl.exe
+  // Try every possible download mechanism — one may work even when others fail
   const hasCurl = (await run('where.exe curl.exe 2>$null')).success;
+
   async function downloadFile(url, dest) {
-    const iwr = await run(
-      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${url}' -OutFile '${dest}' -UseBasicParsing -TimeoutSec 120`,
-      { timeout: 130000 },
+    // 1. Invoke-WebRequest with TLS 1.2 forced
+    let r = await run(
+      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${url}' -OutFile '${dest}' -UseBasicParsing -TimeoutSec 60`,
+      { timeout: 70000 },
     );
-    if (iwr.success) return true;
+    if (r.success) return true;
+
+    // 2. System.Net.WebClient (different .NET code path)
+    r = await run(
+      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('${url}','${dest}')`,
+      { timeout: 70000 },
+    );
+    if (r.success) return true;
+
+    // 3. BITS (Background Intelligent Transfer Service)
+    r = await run(
+      `Start-BitsTransfer -Source '${url}' -Destination '${dest}' -ErrorAction Stop`,
+      { timeout: 70000 },
+    );
+    if (r.success) return true;
+
+    // 4. curl.exe (independent TLS stack)
     if (hasCurl) {
-      const curl = await run(`curl.exe -L --silent --show-error --max-time 120 -o '${dest}' '${url}'`, { timeout: 130000 });
-      if (curl.success) return true;
+      r = await run(
+        `curl.exe -L --ssl-no-revoke --silent --show-error --max-time 60 -o '${dest}' '${url}'`,
+        { timeout: 70000 },
+      );
+      if (r.success) return true;
     }
+
+    // 5. System.Net.Http.HttpClient (most modern .NET stack)
+    r = await run(
+      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $hc=[System.Net.Http.HttpClient]::new(); $hc.DefaultRequestHeaders.Add('User-Agent','Mozilla/5.0'); $bytes=$hc.GetByteArrayAsync('${url}').GetAwaiter().GetResult(); [System.IO.File]::WriteAllBytes('${dest}',$bytes)`,
+      { timeout: 70000 },
+    );
+    if (r.success) return true;
+
     return false;
   }
 
-  // ── Method 1: winget ──────────────────────────────────────────────────────────
-  const wingetCheck = await run('where.exe winget 2>$null');
-  if (wingetCheck.success && wingetCheck.stdout.trim()) {
-    console.log(chalk.gray('\n  [1/4] Trying winget ...\n'));
+  async function runNsisInstaller(exePath) {
+    await run(
+      `$p = Start-Process -FilePath '${exePath}' -ArgumentList '/S' -PassThru -Wait; $p.ExitCode`,
+      { timeout: 120000 },
+    );
+    await new Promise(res => setTimeout(res, 4000));
+    return verifyCertbot();
+  }
+
+  let methodNum = 0;
+  function step(label) {
+    methodNum++;
+    console.log(chalk.gray(`\n  [${methodNum}] ${label}\n`));
+  }
+
+  // ── Method 1: pip / pip3 (PyPI CDN — completely different from GitHub/EFF) ────
+  for (const pip of ['pip', 'pip3']) {
+    const check = await run(`where.exe ${pip} 2>$null`);
+    if (check.success && check.stdout.trim()) {
+      step(`Trying ${pip} install certbot ...`);
+      const exitCode = await runLive(`${pip} install certbot`, { timeout: 180000 });
+      if (exitCode === 0 || await verifyCertbot()) return { success: true };
+      console.log(chalk.yellow(`  ${pip} did not install certbot, trying next...\n`));
+      break;
+    }
+  }
+
+  // ── Method 2: winget ──────────────────────────────────────────────────────────
+  if ((await run('where.exe winget 2>$null')).success) {
+    step('Trying winget ...');
     const exitCode = await runLive(
       'winget install -e --id EFF.Certbot --accept-package-agreements --accept-source-agreements',
       { timeout: 180000 },
     );
     if (exitCode === 0 || await verifyCertbot()) return { success: true };
-    console.log(chalk.yellow('  winget did not install certbot, trying next method...\n'));
+    console.log(chalk.yellow('  winget did not install certbot, trying next...\n'));
   }
 
-  // ── Method 2: Chocolatey ──────────────────────────────────────────────────────
-  const chocoCheck = await run('where.exe choco 2>$null');
-  if (chocoCheck.success && chocoCheck.stdout.trim()) {
-    console.log(chalk.gray('\n  [2/4] Trying Chocolatey ...\n'));
+  // ── Method 3: Chocolatey ──────────────────────────────────────────────────────
+  if ((await run('where.exe choco 2>$null')).success) {
+    step('Trying Chocolatey ...');
     const exitCode = await runLive('choco install certbot -y', { timeout: 180000 });
     if (exitCode === 0 || await verifyCertbot()) return { success: true };
-    console.log(chalk.yellow('  Chocolatey did not install certbot, trying next method...\n'));
+    console.log(chalk.yellow('  Chocolatey did not install certbot, trying next...\n'));
   }
 
-  // ── Method 3: Official NSIS installer (GitHub → dl.eff.org) ──────────────────
+  // ── Method 4: Scoop ───────────────────────────────────────────────────────────
+  if ((await run('where.exe scoop 2>$null')).success) {
+    step('Trying Scoop ...');
+    const exitCode = await runLive('scoop install certbot', { timeout: 180000 });
+    if (exitCode === 0 || await verifyCertbot()) return { success: true };
+    console.log(chalk.yellow('  Scoop did not install certbot, trying next...\n'));
+  }
+
+  // ── Method 5: Direct installer download (multiple sources × multiple methods) ─
   const INSTALLER_FILENAME = 'certbot-beta-installer-win_amd64_signed.exe';
   const INSTALLER_DEST     = `$env:TEMP\\${INSTALLER_FILENAME}`;
   const downloadSources = [
@@ -309,46 +370,58 @@ async function installCertbot() {
     `https://dl.eff.org/${INSTALLER_FILENAME}`,
   ];
 
-  let downloaded = false;
   for (const url of downloadSources) {
     const label = new URL(url).hostname;
-    console.log(chalk.gray(`\n  [3/4] Downloading certbot installer from ${label} ...\n`));
-    if (await downloadFile(url, INSTALLER_DEST)) { downloaded = true; break; }
-    console.log(chalk.yellow(`  Failed from ${label}`));
-  }
-
-  if (downloaded) {
-    console.log(chalk.gray('  Running installer silently ...\n'));
-    // Use Start-Process -PassThru -Wait so PowerShell waits for the NSIS process to fully exit
-    await run(
-      `$p = Start-Process -FilePath "${INSTALLER_DEST}" -ArgumentList '/S' -PassThru -Wait; $p.ExitCode`,
-      { timeout: 120000 },
-    );
-    await run(`Remove-Item -Force "${INSTALLER_DEST}" -ErrorAction SilentlyContinue`);
-    // Allow a few seconds for the installer to finish writing files
-    await new Promise(r => setTimeout(r, 4000));
-    if (await verifyCertbot()) return { success: true };
-    console.log(chalk.yellow('  Installer ran but certbot not found, trying pip...\n'));
-  }
-
-  // ── Method 4: pip (Python must be installed) ──────────────────────────────────
-  const pipCheck = await run('where.exe pip 2>$null');
-  if (pipCheck.success && pipCheck.stdout.trim()) {
-    console.log(chalk.gray('\n  [4/4] Trying pip install certbot ...\n'));
-    const exitCode = await runLive('pip install certbot', { timeout: 180000 });
-    if (exitCode === 0 || await verifyCertbot()) return { success: true };
-  } else {
-    // try pip3 as well
-    const pip3Check = await run('where.exe pip3 2>$null');
-    if (pip3Check.success && pip3Check.stdout.trim()) {
-      console.log(chalk.gray('\n  [4/4] Trying pip3 install certbot ...\n'));
-      const exitCode = await runLive('pip3 install certbot', { timeout: 180000 });
-      if (exitCode === 0 || await verifyCertbot()) return { success: true };
+    step(`Downloading installer from ${label} ...`);
+    if (await downloadFile(url, INSTALLER_DEST)) {
+      console.log(chalk.gray('  Running installer silently ...\n'));
+      const ok = await runNsisInstaller(INSTALLER_DEST);
+      await run(`Remove-Item -Force '${INSTALLER_DEST}' -ErrorAction SilentlyContinue`);
+      if (ok) return { success: true };
+      console.log(chalk.yellow('  Installer ran but certbot not detected, trying next...\n'));
+    } else {
+      console.log(chalk.yellow(`  Could not download from ${label}`));
     }
   }
 
-  // All methods exhausted
-  console.log(chalk.gray('\n  Manual install: https://certbot.eff.org/instructions?ws=other&os=windows\n'));
+  // ── Method 6: Local file (user manually copies the installer to the server) ───
+  console.log(chalk.yellow('\n  All automatic methods failed.'));
+  console.log(chalk.gray('  If you have the certbot installer on this machine, enter its path below.'));
+  console.log(chalk.gray(`  (Download it on another PC: https://certbot.eff.org/instructions?ws=other&os=windows)\n`));
+
+  let localChoice;
+  try {
+    ({ localChoice } = await inquirer.prompt([{
+      type:    'list',
+      name:    'localChoice',
+      message: 'What would you like to do?',
+      choices: ['Specify local installer path', 'Cancel'],
+    }]));
+  } catch { return { success: false }; }
+
+  if (localChoice === 'Specify local installer path') {
+    let localPath;
+    try {
+      ({ localPath } = await inquirer.prompt([{
+        type:    'input',
+        name:    'localPath',
+        message: 'Full path to certbot installer (.exe):',
+        validate: v => v.trim().length > 0 || 'Required',
+      }]));
+    } catch { return { success: false }; }
+
+    const exists = await run(`Test-Path '${localPath.trim()}'`);
+    if (exists.stdout.trim().toLowerCase() !== 'true') {
+      console.log(chalk.red(`  File not found: ${localPath}\n`));
+      return { success: false };
+    }
+
+    step('Running local installer silently ...');
+    const ok = await runNsisInstaller(localPath.trim());
+    if (ok) return { success: true };
+    console.log(chalk.red('  Installer ran but certbot was not detected.\n'));
+  }
+
   return { success: false };
 }
 
