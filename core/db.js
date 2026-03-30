@@ -28,3 +28,14 @@ export { db };
 export const dbGet = (key) => db.get(key);
 export const dbSet = (key, value) => db.set(key, value);
 export const dbDelete = (key) => db.delete(key);
+
+/**
+ * Closes the underlying SQLite connection.
+ * Call this before any operation that needs to rename or replace the db file
+ * (e.g. npm install -g), otherwise the open file handle causes EBUSY on Windows.
+ */
+export function closeDb() {
+  try {
+    db.driver?.db?.close?.();
+  } catch { /* ignore */ }
+}

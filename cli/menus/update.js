@@ -21,7 +21,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { run } from '../../core/shell.js';
-import { dbGet, dbSet } from '../../core/db.js';
+import { dbGet, dbSet, closeDb } from '../../core/db.js';
 import { loadConfig } from '../../core/config.js';
 import { getDashboardStatus, startDashboard, stopDashboard } from './dashboard.js';
 
@@ -92,7 +92,10 @@ async function performUpdate(latestVersion) {
     sp.succeed('Dashboard stopped');
   }
 
-  // Step 3 — install new version
+  // Step 3 — close the SQLite connection so npm can rename the db file (EBUSY on Windows)
+  closeDb();
+
+  // Step 4 — install new version
   const sp = ora(`Installing easy-devops@${latestVersion}...`).start();
   const result = await run(`npm install -g easy-devops@${latestVersion}`, { timeout: 120000 });
 
@@ -105,7 +108,7 @@ async function performUpdate(latestVersion) {
 
   sp.succeed(`Updated to v${latestVersion}`);
 
-  // Step 4 — restart dashboard if it was running before
+  // Step 5 — restart dashboard if it was running before
   const saved = dbGet('update-pre-dashboard');
   dbSet('update-pre-dashboard', null);
 

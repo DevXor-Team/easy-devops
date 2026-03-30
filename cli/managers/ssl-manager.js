@@ -247,91 +247,109 @@ async function installCertbot() {
     return { success: exitCode === 0 };
   }
 
-  // ── Windows: winget → Chocolatey → direct EFF installer ──────────────────────
+  // ── Shared helpers ────────────────────────────────────────────────────────────
 
-  // 1. Try winget (Windows 10/11 desktop; not on Windows Server by default)
+  // Check multiple possible certbot locations — some methods install to different paths
+  async function verifyCertbot() {
+    const whereResult = await run('where.exe certbot 2>$null');
+    if (whereResult.success && whereResult.stdout.trim()) return true;
+    const paths = [
+      CERTBOT_WIN_EXE,
+      'C:\\Program Files (x86)\\Certbot\\bin\\certbot.exe',
+      'C:\\Certbot\\bin\\certbot.exe',
+    ];
+    for (const p of paths) {
+      const r = await run(`Test-Path '${p}'`);
+      if (r.stdout.trim().toLowerCase() === 'true') return true;
+    }
+    return false;
+  }
+
+  // Download a file trying Invoke-WebRequest (TLS 1.2 forced) then curl.exe
+  const hasCurl = (await run('where.exe curl.exe 2>$null')).success;
+  async function downloadFile(url, dest) {
+    const iwr = await run(
+      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${url}' -OutFile '${dest}' -UseBasicParsing -TimeoutSec 120`,
+      { timeout: 130000 },
+    );
+    if (iwr.success) return true;
+    if (hasCurl) {
+      const curl = await run(`curl.exe -L --silent --show-error --max-time 120 -o '${dest}' '${url}'`, { timeout: 130000 });
+      if (curl.success) return true;
+    }
+    return false;
+  }
+
+  // ── Method 1: winget ──────────────────────────────────────────────────────────
   const wingetCheck = await run('where.exe winget 2>$null');
-  if (wingetCheck.success && wingetCheck.stdout.trim().length > 0) {
-    console.log(chalk.gray('\n  Installing via winget (EFF.Certbot) ...\n'));
+  if (wingetCheck.success && wingetCheck.stdout.trim()) {
+    console.log(chalk.gray('\n  [1/4] Trying winget ...\n'));
     const exitCode = await runLive(
       'winget install -e --id EFF.Certbot --accept-package-agreements --accept-source-agreements',
       { timeout: 180000 },
     );
-    if (exitCode === 0) {
-      const check = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
-      return { success: check.stdout.trim().toLowerCase() === 'true' };
-    }
-    console.log(chalk.yellow('  winget failed, trying Chocolatey...\n'));
+    if (exitCode === 0 || await verifyCertbot()) return { success: true };
+    console.log(chalk.yellow('  winget did not install certbot, trying next method...\n'));
   }
 
-  // 2. Try Chocolatey (common on Windows Server)
+  // ── Method 2: Chocolatey ──────────────────────────────────────────────────────
   const chocoCheck = await run('where.exe choco 2>$null');
-  if (chocoCheck.success && chocoCheck.stdout.trim().length > 0) {
-    console.log(chalk.gray('\n  Installing via Chocolatey ...\n'));
+  if (chocoCheck.success && chocoCheck.stdout.trim()) {
+    console.log(chalk.gray('\n  [2/4] Trying Chocolatey ...\n'));
     const exitCode = await runLive('choco install certbot -y', { timeout: 180000 });
-    if (exitCode === 0) {
-      const check = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
-      return { success: check.stdout.trim().toLowerCase() === 'true' };
-    }
-    console.log(chalk.yellow('  Chocolatey failed, trying direct download...\n'));
+    if (exitCode === 0 || await verifyCertbot()) return { success: true };
+    console.log(chalk.yellow('  Chocolatey did not install certbot, trying next method...\n'));
   }
 
-  // 3. Direct download — try multiple sources × multiple download methods
-  //    PowerShell 5.1 on Windows Server defaults to TLS 1.0; GitHub requires TLS 1.2+.
-  //    Force TLS 1.2 before every Invoke-WebRequest call.
-  //    Also try curl.exe (built into Windows Server 2019+) as a second method.
+  // ── Method 3: Official NSIS installer (GitHub → dl.eff.org) ──────────────────
   const INSTALLER_FILENAME = 'certbot-beta-installer-win_amd64_signed.exe';
-  const INSTALLER_DEST     = '$env:TEMP\\certbot-installer.exe';
+  const INSTALLER_DEST     = `$env:TEMP\\${INSTALLER_FILENAME}`;
   const downloadSources = [
     `https://github.com/certbot/certbot/releases/latest/download/${INSTALLER_FILENAME}`,
     `https://dl.eff.org/${INSTALLER_FILENAME}`,
   ];
 
-  const hasCurl = (await run('where.exe curl.exe 2>$null')).success;
-
   let downloaded = false;
   for (const url of downloadSources) {
     const label = new URL(url).hostname;
-    console.log(chalk.gray(`\n  Downloading certbot installer from ${label} ...\n`));
-
-    // Method A: Invoke-WebRequest with TLS 1.2 forced
-    const iwr = await run(
-      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${url}' -OutFile "${INSTALLER_DEST}" -UseBasicParsing -TimeoutSec 120`,
-      { timeout: 130000 },
-    );
-    if (iwr.success) { downloaded = true; break; }
-
-    // Method B: curl.exe (handles TLS independently of PowerShell/.NET settings)
-    if (hasCurl) {
-      const curlResult = await run(
-        `curl.exe -L --silent --show-error --max-time 120 -o "${INSTALLER_DEST}" "${url}"`,
-        { timeout: 130000 },
-      );
-      if (curlResult.success) { downloaded = true; break; }
-    }
-
+    console.log(chalk.gray(`\n  [3/4] Downloading certbot installer from ${label} ...\n`));
+    if (await downloadFile(url, INSTALLER_DEST)) { downloaded = true; break; }
     console.log(chalk.yellow(`  Failed from ${label}`));
   }
 
-  if (!downloaded) {
-    console.log(chalk.red('\n  Download failed from all sources.'));
-    console.log(chalk.gray('  Install manually: https://certbot.eff.org/instructions?ws=other&os=windows\n'));
-    return { success: false };
+  if (downloaded) {
+    console.log(chalk.gray('  Running installer silently ...\n'));
+    // Use Start-Process -PassThru -Wait so PowerShell waits for the NSIS process to fully exit
+    await run(
+      `$p = Start-Process -FilePath "${INSTALLER_DEST}" -ArgumentList '/S' -PassThru -Wait; $p.ExitCode`,
+      { timeout: 120000 },
+    );
+    await run(`Remove-Item -Force "${INSTALLER_DEST}" -ErrorAction SilentlyContinue`);
+    // Allow a few seconds for the installer to finish writing files
+    await new Promise(r => setTimeout(r, 4000));
+    if (await verifyCertbot()) return { success: true };
+    console.log(chalk.yellow('  Installer ran but certbot not found, trying pip...\n'));
   }
 
-  console.log(chalk.gray('  Running installer silently ...\n'));
+  // ── Method 4: pip (Python must be installed) ──────────────────────────────────
+  const pipCheck = await run('where.exe pip 2>$null');
+  if (pipCheck.success && pipCheck.stdout.trim()) {
+    console.log(chalk.gray('\n  [4/4] Trying pip install certbot ...\n'));
+    const exitCode = await runLive('pip install certbot', { timeout: 180000 });
+    if (exitCode === 0 || await verifyCertbot()) return { success: true };
+  } else {
+    // try pip3 as well
+    const pip3Check = await run('where.exe pip3 2>$null');
+    if (pip3Check.success && pip3Check.stdout.trim()) {
+      console.log(chalk.gray('\n  [4/4] Trying pip3 install certbot ...\n'));
+      const exitCode = await runLive('pip3 install certbot', { timeout: 180000 });
+      if (exitCode === 0 || await verifyCertbot()) return { success: true };
+    }
+  }
 
-  await run(
-    `Start-Process -FilePath "$env:TEMP\\certbot-installer.exe" -ArgumentList '/S' -Wait -NoNewWindow`,
-    { timeout: 120000 },
-  );
-
-  // Cleanup installer
-  await run(`Remove-Item -Force "$env:TEMP\\certbot-installer.exe" -ErrorAction SilentlyContinue`);
-
-  // Verify
-  const check = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
-  return { success: check.stdout.trim().toLowerCase() === 'true' };
+  // All methods exhausted
+  console.log(chalk.gray('\n  Manual install: https://certbot.eff.org/instructions?ws=other&os=windows\n'));
+  return { success: false };
 }
 
 // ─── showSslManager ───────────────────────────────────────────────────────────
