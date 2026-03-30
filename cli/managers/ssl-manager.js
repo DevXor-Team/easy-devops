@@ -370,9 +370,93 @@ async function installCertbot() {
     console.log(chalk.gray(`\n [${methodNum}] ${label}\n`));
   }
 
+  // ── Check winget availability and offer to install if missing ─────────────────
+  let wingetAvailable = false;
+  const wingetCheck = await run('where.exe winget 2>$null');
+  wingetAvailable = wingetCheck.success && wingetCheck.stdout.trim();
+
+  if (!wingetAvailable) {
+    console.log(chalk.yellow('\n ⚠ winget is not installed on this system.'));
+    console.log(chalk.gray('   winget (Windows Package Manager) provides the easiest installation method.'));
+
+    let installWinget;
+    try {
+      ({ installWinget } = await inquirer.prompt([{
+        type: 'confirm',
+        name: 'installWinget',
+        message: 'Would you like to install winget (App Installer) from Microsoft Store?',
+        default: true,
+      }]));
+    } catch { /* user cancelled */ }
+
+    if (installWinget) {
+      console.log(chalk.cyan('\n Opening Microsoft Store to install App Installer...'));
+      console.log(chalk.gray(' Please complete the installation, then run this command again.\n'));
+
+      // Try to open Microsoft Store
+      const storeOpened = await run(
+        'Start-Process "ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1"',
+        { timeout: 10000 }
+      ).catch(() => ({ success: false }));
+
+      if (storeOpened.success) {
+        console.log(chalk.green(' Microsoft Store opened successfully.'));
+        console.log(chalk.gray(' After installing App Installer, winget will be available.\n'));
+      } else {
+        console.log(chalk.yellow(' Could not open Microsoft Store directly.'));
+        console.log(chalk.gray(' Please manually install "App Installer" from:'));
+        console.log(chalk.cyan(' https://apps.microsoft.com/store/detail/app-installer/9NBLGGH4NNS1\n'));
+      }
+
+      // Optional: try direct download of App Installer
+      let tryDownload;
+      try {
+        ({ tryDownload } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'tryDownload',
+          message: 'Would you like to try downloading App Installer directly?',
+          default: false,
+        }]));
+      } catch { tryDownload = false; }
+
+      if (tryDownload) {
+        const appInstallerUrl = 'https://aka.ms/getwinget';
+        const appInstallerDest = '$env:TEMP\\AppInstaller.msixbundle';
+
+        console.log(chalk.gray('\n Downloading App Installer...'));
+        const downloaded = await downloadFile(appInstallerUrl, appInstallerDest);
+
+        if (downloaded) {
+          console.log(chalk.gray(' Running App Installer...'));
+          await run(`Start-Process -FilePath '${appInstallerDest}' -Wait`, { timeout: 300000 });
+
+          // Re-check for winget
+          const recheck = await run('where.exe winget 2>$null');
+          if (recheck.success && recheck.stdout.trim()) {
+            console.log(chalk.green('\n ✓ winget installed successfully!\n'));
+            wingetAvailable = true;
+          } else {
+            console.log(chalk.yellow('\n App Installer ran but winget is not yet available.'));
+            console.log(chalk.gray(' You may need to restart your terminal or sign out/in.\n'));
+          }
+        } else {
+          console.log(chalk.yellow('\n Could not download App Installer automatically.\n'));
+        }
+      }
+
+      // If still no winget, continue with other methods
+      if (!wingetAvailable) {
+        console.log(chalk.gray(' Continuing with alternative installation methods...\n'));
+      }
+    } else {
+      console.log(chalk.gray(' Skipping winget installation. Using alternative methods...\n'));
+    }
+  }
+
   // ── Method 1: winget (win-acme - has better success rate) ─────────────────────
-  if ((await run('where.exe winget 2>$null')).success) {
+  if (wingetAvailable) {
     step('Trying winget (win-acme) ...');
+    console.log(chalk.gray(' Running: winget install win-acme.win-acme\n'));
     const exitCode = await runLive(
       'winget install -e --id win-acme.win-acme --accept-package-agreements --accept-source-agreements',
       { timeout: 180000 },
@@ -382,8 +466,9 @@ async function installCertbot() {
   }
 
   // ── Method 2: winget (certbot EFF) ────────────────────────────────────────────
-  if ((await run('where.exe winget 2>$null')).success) {
+  if (wingetAvailable) {
     step('Trying winget (EFF.Certbot) ...');
+    console.log(chalk.gray(' Running: winget install EFF.Certbot\n'));
     const exitCode = await runLive(
       'winget install -e --id EFF.Certbot --accept-package-agreements --accept-source-agreements',
       { timeout: 180000 },
@@ -485,8 +570,8 @@ async function installCertbot() {
   // ── Method 9: Manual installer path ───────────────────────────────────────────
   console.log(chalk.yellow('\n All automatic methods failed.'));
   console.log(chalk.gray(' You can manually download one of these on another PC:'));
-  console.log(chalk.gray('   • certbot:  https://certbot.eff.org/instructions?ws=other&os=windows'));
-  console.log(chalk.gray('   • win-acme: https://github.com/win-acme/win-acme/releases'));
+  console.log(chalk.gray(' • certbot: https://certbot.eff.org/instructions?ws=other&os=windows'));
+  console.log(chalk.gray(' • win-acme: https://github.com/win-acme/win-acme/releases'));
   console.log(chalk.gray(' Then transfer to this server and use "Specify local installer" below.\n'));
 
   let localChoice;
