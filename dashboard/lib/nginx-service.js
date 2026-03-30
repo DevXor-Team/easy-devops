@@ -141,17 +141,26 @@ export async function start() {
     throw new NginxNotFoundError('nginx binary not found');
   }
 
-  // Test config before starting
+  // Ensure required directories exist on Windows
+  if (process.platform === 'win32') {
+    await fs.mkdir(path.join(nginxDir, 'logs'), { recursive: true });
+    await fs.mkdir(path.join(nginxDir, 'temp'), { recursive: true });
+  }
+
+  // Test config before starting with explicit config path on Windows
   await ensureNginxInclude(nginxDir);
-  const testResult = await run(`${nginxExe} -t`);
+  const testCmd = process.platform === 'win32'
+    ? `${nginxExe} -c "${path.join(nginxDir, 'conf', 'nginx.conf')}" -t`
+    : `${nginxExe} -t`;
+  const testResult = await run(testCmd);
   if (!testResult.success) {
     return { success: false, output: combineOutput(testResult) };
   }
 
-  // Start nginx
+  // Start nginx with explicit config path on Windows
   if (process.platform === 'win32') {
-    // On Windows, nginx runs in foreground so we need Start-Process
-    const startCmd = `Start-Process -FilePath "${path.join(nginxDir, 'nginx.exe')}" -WorkingDirectory "${nginxDir}" -WindowStyle Hidden`;
+    const confPath = path.join(nginxDir, 'conf', 'nginx.conf');
+    const startCmd = `Start-Process -FilePath "${path.join(nginxDir, 'nginx.exe')}" -ArgumentList '-c','"${confPath}"' -WorkingDirectory "${nginxDir}" -WindowStyle Hidden`;
     await run(startCmd, { timeout: 10000 });
   } else {
     const result = await run('nginx', { cwd: nginxDir, timeout: 15000 });
@@ -216,7 +225,11 @@ export async function test() {
   }
 
   await ensureNginxInclude(nginxDir);
-  const result = await run(`${nginxExe} -t`);
+  // Use explicit -c flag on Windows to avoid path issues
+  const testCmd = process.platform === 'win32'
+    ? `${nginxExe} -c "${path.join(nginxDir, 'conf', 'nginx.conf')}" -t`
+    : `${nginxExe} -t`;
+  const result = await run(testCmd);
   return { success: result.success, output: combineOutput(result) };
 }
 

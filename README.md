@@ -21,6 +21,7 @@ A unified DevOps management tool with interactive CLI and web dashboard for mana
 
 - **Node.js 18+** (with npm)
 - **Linux** (Debian/Ubuntu) or **Windows**
+- ⚠️ **Windows users: PowerShell must be run as Administrator** (required for installing packages via winget, managing services, and SSL certificates)
 - Optional: Nginx, Certbot, nvm (installed separately or via the tool)
 
 ## Installation
@@ -48,6 +49,8 @@ wget -qO- https://raw.githubusercontent.com/omar00050/Easy-DevOps/main/install.s
 ```
 
 #### Windows (PowerShell)
+
+> ⚠️ **Important:** Run PowerShell **as Administrator**. Right-click PowerShell → "Run as Administrator".
 
 ```powershell
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/omar00050/Easy-DevOps/main/install.ps1" -OutFile "install.ps1"; ./install.ps1
@@ -175,6 +178,20 @@ Manage Let's Encrypt SSL certificates using Certbot.
 
 > **Note:** Renewing a certificate temporarily stops Nginx to free port 80, then restarts it automatically.
 
+#### Windows Package Manager (winget)
+
+Easy DevOps uses **winget** (Windows Package Manager) to install certbot and other packages on Windows. If winget is not installed, Easy DevOps will automatically prompt to install it using the [asheroto/winget-install](https://github.com/asheroto/winget-install) script.
+
+**Installing winget manually:**
+
+If you prefer to install winget separately, you can:
+
+1. **Install from Microsoft Store:** Search for "App Installer" in the Microsoft Store
+2. **Use the winget-install script:** [https://github.com/asheroto/winget-install](https://github.com/asheroto/winget-install)
+3. **Official Microsoft documentation:** [https://learn.microsoft.com/en-us/windows/package-manager/winget/](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+
+> **Note:** The embedded `winget-install.ps1` script in this project is sourced from [asheroto/winget-install](https://github.com/asheroto/winget-install) — a community-maintained, reliable installer for winget on Windows Server and systems without the Microsoft Store.
+
 ---
 
 ### Web Dashboard
@@ -187,7 +204,15 @@ Start the web dashboard:
 npm run dashboard
 ```
 
-Access at `http://localhost:3000` (or configured port).
+Access at `http://localhost:6443` (or configured port).
+
+#### First-Time Login
+
+Default credentials:
+- **Username:** `admin`
+- **Password:** Set in Settings menu or check your configuration
+
+> **Tip:** From the Dashboard menu, select "How to use" for a quick guide on getting started.
 
 #### Dashboard Pages
 
@@ -245,7 +270,8 @@ easy-devops/
 │   ├── config.js         # Configuration loader
 │   ├── db.js             # SQLite database (good.db)
 │   ├── detector.js       # System environment detection
-│   └── shell.js          # Cross-platform shell executor
+│   ├── shell.js          # Cross-platform shell executor
+│   └── nginx-conf-generator.js  # Nginx config file generator
 ├── dashboard/
 │   ├── server.js         # Express + Socket.io server
 │   ├── routes/           # API endpoints
@@ -255,7 +281,10 @@ easy-devops/
 ├── data/
 │   └── easy-devops.sqlite
 └── lib/
-    └── installer/        # Bootstrap scripts
+    └── installer/
+        ├── install.ps1   # Windows bootstrap installer
+        ├── install.sh    # Linux/macOS bootstrap installer
+        └── winget-install.ps1  # Windows Package Manager installer
 ```
 
 ---

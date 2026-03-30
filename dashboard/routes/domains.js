@@ -18,7 +18,12 @@ function getNginxExe(nginxDir) {
 
 function nginxTestCmd(nginxDir) {
   const exe = getNginxExe(nginxDir);
-  return isWindows ? `& "${exe}" -t` : 'nginx -t';
+  // Use explicit -c flag on Windows to avoid path issues
+  if (isWindows) {
+    const confPath = `${nginxDir}\\conf\\nginx.conf`;
+    return `& "${exe}" -c "${confPath}" -t`;
+  }
+  return 'nginx -t';
 }
 
 function nginxReloadCmd(nginxDir) {

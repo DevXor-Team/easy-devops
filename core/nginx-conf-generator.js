@@ -257,7 +257,8 @@ export function buildConf(domain, nginxDir, certbotDir) {
 
   // Logging
   if (advanced?.accessLog) {
-    mainBlock.push(`  access_log /var/log/nginx/${name}.access.log;`);
+    const logDir = isWindows ? `${nginxDir.replace(/\\/g, '/')}/logs` : '/var/log/nginx';
+    mainBlock.push(` access_log ${logDir}/${name}.access.log;`);
   }
 
   // ─── Location Block ─────────────────────────────────────────────────────────
@@ -301,10 +302,10 @@ export function buildConf(domain, nginxDir, certbotDir) {
       mainBlock.push(`  error_page 500 502 503 504 /50x.html;`);
     }
     if (security.custom404) {
-      mainBlock.push(`  location = /404.html { root /usr/share/nginx/html; internal; }`);
+      mainBlock.push(`  location = /404.html { root ${isWindows ? nginxDir.replace(/\\/g, '/') + '/html' : '/usr/share/nginx/html'}; internal; }`);
     }
     if (security.custom50x) {
-      mainBlock.push(`  location = /50x.html { root /usr/share/nginx/html; internal; }`);
+      mainBlock.push(`  location = /50x.html { root ${isWindows ? nginxDir.replace(/\\/g, '/') + '/html' : '/usr/share/nginx/html'}; internal; }`);
     }
   }
 

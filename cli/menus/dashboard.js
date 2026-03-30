@@ -139,6 +139,26 @@ function openBrowser(url) {
   run(cmd).catch(() => {});
 }
 
+// ─── Usage Info ──────────────────────────────────────────────────────────────
+
+function showUsageInfo() {
+  console.log(chalk.cyan('\n How to use the Dashboard:'));
+  console.log(chalk.gray(' ─'.repeat(40)));
+  console.log('  1. Start the dashboard from this menu');
+  console.log('  2. Open it in your browser (or visit the URL shown)');
+  console.log('  3. Log in with the admin password from config');
+  console.log('  4. Use the dashboard to:');
+  console.log(chalk.gray('     • Manage domains → create nginx configs'));
+  console.log(chalk.gray('     • View SSL certificates'));
+  console.log(chalk.gray('     • Control nginx (start/stop/reload)'));
+  console.log(chalk.gray('     • Edit nginx configuration files'));
+  console.log();
+  console.log(chalk.yellow(' Default login:'));
+  console.log(chalk.gray('   Username: admin'));
+  console.log(chalk.gray('   Password: (check your config or set one)'));
+  console.log();
+}
+
 // ─── Menu ─────────────────────────────────────────────────────────────────────
 
 export default async function dashboardMenu() {
@@ -160,8 +180,8 @@ export default async function dashboardMenu() {
     console.log();
 
     const choices = status.running
-      ? ['Open in browser', 'Stop dashboard', new inquirer.Separator(), '← Back']
-      : ['Start dashboard', new inquirer.Separator(), '← Back'];
+      ? ['Open in browser', 'Stop dashboard', 'How to use', new inquirer.Separator(), '← Back']
+      : ['Start dashboard', 'How to use', new inquirer.Separator(), '← Back'];
 
     let choice;
     try {
