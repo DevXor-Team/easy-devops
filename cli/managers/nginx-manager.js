@@ -222,23 +222,95 @@ async function stopNginx(nginxDir) {
 // ─── installNginx ─────────────────────────────────────────────────────────────
 
 async function installNginx() {
-  const spinner = ora('Installing nginx…').start();
-
-  const cmd = isWindows
-    ? 'winget install -e --id Nginx.Nginx --accept-package-agreements --accept-source-agreements'
-    : 'sudo apt-get install -y nginx';
-
-  const result = await run(cmd, { timeout: 120000 });
-
-  if (result.success) {
-    spinner.succeed('nginx installed successfully');
-    return { success: true, message: 'nginx installed successfully', output: result.stdout };
-  } else {
+  if (!isWindows) {
+    const spinner = ora('Installing nginx…').start();
+    const result = await run('sudo apt-get install -y nginx', { timeout: 120000 });
+    if (result.success) {
+      spinner.succeed('nginx installed successfully');
+      return { success: true, message: 'nginx installed successfully', output: result.stdout };
+    }
     spinner.fail('Installation failed');
     console.log(chalk.red(result.stderr || result.stdout));
     console.log(chalk.gray('\n  Manual instructions: https://nginx.org/en/docs/install.html\n'));
     return { success: false, message: 'Installation failed', output: result.stderr || result.stdout };
   }
+
+  // ── Windows ──────────────────────────────────────────────────────────────────
+  const spinner = ora('Checking for winget…').start();
+
+  // Try winget first (available on Windows 10/11 desktop; not on Windows Server by default)
+  const wingetCheck = await run('where.exe winget 2>$null');
+  const hasWinget = wingetCheck.success && wingetCheck.stdout.trim().length > 0;
+
+  if (hasWinget) {
+    spinner.text = 'Installing nginx via winget…';
+    const result = await run(
+      'winget install -e --id Nginx.Nginx --accept-package-agreements --accept-source-agreements',
+      { timeout: 120000 },
+    );
+    if (result.success) {
+      spinner.succeed('nginx installed successfully');
+      return { success: true, message: 'nginx installed successfully', output: result.stdout };
+    }
+    spinner.fail('winget install failed');
+    console.log(chalk.red(result.stderr || result.stdout));
+    console.log(chalk.gray('\n  Manual instructions: https://nginx.org/en/docs/install.html\n'));
+    return { success: false, message: 'Installation failed', output: result.stderr || result.stdout };
+  }
+
+  // ── Fallback: direct download from nginx.org ─────────────────────────────────
+  spinner.text = 'Fetching latest nginx version…';
+
+  // Try to resolve the current stable version; fall back to a known-good release
+  const FALLBACK_VERSION = '1.26.3';
+  let nginxVersion = FALLBACK_VERSION;
+
+  const fetchVersionResult = await run(
+    `try { $p=(Invoke-WebRequest -Uri 'https://nginx.org/en/download.html' -UseBasicParsing -TimeoutSec 15).Content; if($p -match 'nginx-(\\d+\\.\\d+\\.\\d+)\\.zip'){$Matches[1]}else{''} } catch { '' }`,
+    { timeout: 20000 },
+  );
+  const fetched = (fetchVersionResult.stdout || '').trim();
+  if (/^\d+\.\d+\.\d+$/.test(fetched)) nginxVersion = fetched;
+
+  const { nginxDir } = loadConfig();
+  const zipUrl = `https://nginx.org/download/nginx-${nginxVersion}.zip`;
+
+  spinner.text = `Downloading nginx ${nginxVersion}…`;
+
+  const downloadResult = await run(
+    `$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${zipUrl}' -OutFile "$env:TEMP\\nginx-${nginxVersion}.zip" -UseBasicParsing -TimeoutSec 120`,
+    { timeout: 130000 },
+  );
+
+  if (!downloadResult.success) {
+    spinner.fail('Download failed');
+    console.log(chalk.red(downloadResult.stderr || downloadResult.stdout));
+    console.log(chalk.gray(`\n  Download nginx manually from: https://nginx.org/en/download.html\n`));
+    return { success: false, message: 'Download failed', output: downloadResult.stderr || downloadResult.stdout };
+  }
+
+  spinner.text = 'Extracting nginx…';
+
+  const extractResult = await run(
+    `$ProgressPreference='SilentlyContinue'; $tmp="$env:TEMP\\nginx-extract-${nginxVersion}"; if(Test-Path $tmp){Remove-Item -Recurse -Force $tmp}; Expand-Archive -Path "$env:TEMP\\nginx-${nginxVersion}.zip" -DestinationPath $tmp -Force; $src=Join-Path $tmp 'nginx-${nginxVersion}'; if(-not(Test-Path '${nginxDir}')){New-Item -ItemType Directory -Force '${nginxDir}'|Out-Null}; Copy-Item -Path "$src\\*" -Destination '${nginxDir}' -Recurse -Force; Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue; Remove-Item -Force "$env:TEMP\\nginx-${nginxVersion}.zip" -ErrorAction SilentlyContinue`,
+    { timeout: 60000 },
+  );
+
+  if (!extractResult.success) {
+    spinner.fail('Extraction failed');
+    console.log(chalk.red(extractResult.stderr || extractResult.stdout));
+    return { success: false, message: 'Extraction failed', output: extractResult.stderr || extractResult.stdout };
+  }
+
+  // Verify nginx.exe is present
+  const verifyResult = await run(`Test-Path '${nginxDir}\\nginx.exe'`);
+  if (!verifyResult.success || !verifyResult.stdout.trim().toLowerCase().includes('true')) {
+    spinner.fail(`nginx.exe not found in ${nginxDir} after extraction`);
+    return { success: false, message: 'nginx.exe not found after extraction' };
+  }
+
+  spinner.succeed(`nginx ${nginxVersion} installed to ${nginxDir}`);
+  return { success: true, message: `nginx ${nginxVersion} installed successfully`, output: '' };
 }
 
 // ─── showNginxManager ─────────────────────────────────────────────────────────
