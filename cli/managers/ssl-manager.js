@@ -310,49 +310,104 @@ async function installCertbot() {
   }
 
   const hasCurl = (await run('where.exe curl.exe 2>$null')).success;
+  let lastDownloadError = '';
 
-  async function downloadFile(url, dest) {
+  async function downloadFile(url, dest, showErrors = false) {
     const safeUrl = url.replace(/'/g, "''");
     const safeDest = dest.replace(/'/g, "''");
 
-    // Method 1: Invoke-WebRequest with TLS 1.2
+    // Enable all TLS versions (1.0, 1.1, 1.2, 1.3) for maximum compatibility
+    const tlsSetup = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13`;
+
+    // Method 1: Invoke-WebRequest with all TLS versions
     let r = await run(
-      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${safeUrl}' -OutFile '${safeDest}' -UseBasicParsing -TimeoutSec 120`,
+      `${tlsSetup}; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${safeUrl}' -OutFile '${safeDest}' -UseBasicParsing -TimeoutSec 120`,
       { timeout: 130000 },
     );
     if (r.success) return true;
+    if (showErrors && r.stderr) lastDownloadError = `Invoke-WebRequest: ${r.stderr}`;
 
-    // Method 2: WebClient
+    // Method 2: WebClient with TLS
     r = await run(
-      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('${safeUrl}','${safeDest}')`,
+      `${tlsSetup}; (New-Object System.Net.WebClient).DownloadFile('${safeUrl}','${safeDest}')`,
       { timeout: 130000 },
     );
     if (r.success) return true;
+    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `WebClient: ${r.stderr}`;
 
-    // Method 3: BITS
+    // Method 3: BITS Transfer
     r = await run(
       `Import-Module BitsTransfer -ErrorAction SilentlyContinue; Start-BitsTransfer -Source '${safeUrl}' -Destination '${safeDest}' -ErrorAction Stop`,
       { timeout: 130000 },
     );
     if (r.success) return true;
+    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `BITS: ${r.stderr}`;
 
-    // Method 4: curl.exe
+    // Method 4: curl.exe (works on Windows 10+)
     if (hasCurl) {
       r = await run(
-        `curl.exe -L --ssl-no-revoke --silent --show-error --max-time 120 -o '${safeDest}' '${safeUrl}'`,
+        `curl.exe -L --ssl-no-revoke --max-time 120 -o '${safeDest}' '${safeUrl}'`,
         { timeout: 130000 },
       );
       if (r.success) return true;
+      if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `curl: ${r.stderr}`;
     }
 
-    // Method 5: HttpClient
+    // Method 5: HttpClient with custom handler
     r = await run(
-      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $hc=[System.Net.Http.HttpClient]::new(); $hc.DefaultRequestHeaders.Add('User-Agent','Mozilla/5.0'); $hc.Timeout=[TimeSpan]::FromSeconds(120); $bytes=$hc.GetByteArrayAsync('${safeUrl}').GetAwaiter().GetResult(); [System.IO.File]::WriteAllBytes('${safeDest}',$bytes)`,
+      `${tlsSetup}; $handler=[System.Net.Http.HttpClientHandler]::new(); $handler.ServerCertificateCustomValidationCallback={$true}; $handler.AllowAutoRedirect=$true; $hc=[System.Net.Http.HttpClient]::new($handler); $hc.DefaultRequestHeaders.Add('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64)'); $hc.Timeout=[TimeSpan]::FromSeconds(120); $bytes=$hc.GetByteArrayAsync('${safeUrl}').GetAwaiter().GetResult(); [System.IO.File]::WriteAllBytes('${safeDest}',$bytes)`,
       { timeout: 130000 },
     );
     if (r.success) return true;
+    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `HttpClient: ${r.stderr}`;
+
+    // Method 6: Certutil (built-in Windows tool)
+    r = await run(
+      `certutil.exe -urlcache -split -f "${safeUrl}" "${safeDest}"`,
+      { timeout: 130000 },
+    );
+    if (r.success) return true;
+    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `certutil: ${r.stderr}`;
+
+    // Method 7: PowerShell with DisableKeepAlive
+    r = await run(
+      `${tlsSetup}; $req=[System.Net.WebRequest]::Create('${safeUrl}'); $req.Method='GET'; $req.KeepAlive=$false; $req.UserAgent='Mozilla/5.0'; $resp=$req.GetResponse(); $stream=$resp.GetResponseStream(); $reader=[System.IO.BinaryReader]::new($stream); $bytes=$reader.ReadBytes($resp.ContentLength); $reader.Close(); [System.IO.File]::WriteAllBytes('${safeDest}',$bytes)`,
+      { timeout: 130000 },
+    );
+    if (r.success) return true;
+    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `WebRequest: ${r.stderr}`;
 
     return false;
+  }
+
+  // Test network connectivity to common endpoints
+  async function testNetworkConnectivity() {
+    console.log(chalk.cyan('\n Testing network connectivity...'));
+    const tests = [
+      { name: 'GitHub', url: 'https://github.com' },
+      { name: 'Microsoft', url: 'https://microsoft.com' },
+      { name: 'EFF', url: 'https://eff.org' },
+    ];
+    const results = [];
+
+    for (const test of tests) {
+      const r = await run(`curl.exe -I --ssl-no-revoke --max-time 10 "${test.url}"`, { timeout: 15000 });
+      const success = r.success || r.stdout.includes('HTTP') || r.stdout.includes('200');
+      results.push({ name: test.name, success });
+      console.log(chalk.gray(`   ${test.name}: ${success ? chalk.green('✓ Connected') : chalk.red('✗ Failed')}`));
+    }
+
+    const allFailed = results.every(r => !r.success);
+    if (allFailed) {
+      console.log(chalk.yellow('\n   ⚠ All external connections failed.'));
+      console.log(chalk.gray('   This could indicate:'));
+      console.log(chalk.gray('   • Firewall blocking outbound connections'));
+      console.log(chalk.gray('   • Proxy server required'));
+      console.log(chalk.gray('   • DNS resolution issues'));
+      console.log(chalk.gray('   • Antivirus blocking downloads'));
+    }
+    console.log();
+    return results;
   }
 
   async function runNsisInstaller(exePath) {
@@ -517,6 +572,9 @@ async function installCertbot() {
   // ── Method 7: Direct download win-acme (ZIP - smaller, no installer) ──────────
   const WINACME_DEST = 'C:\\Program Files\\win-acme';
 
+  // Test network before attempting downloads
+  await testNetworkConnectivity();
+
   step('Downloading win-acme from GitHub ...');
   const winAcmeUrls = [
     'https://github.com/win-acme/win-acme/releases/latest/download/win-acme.zip',
@@ -528,7 +586,8 @@ async function installCertbot() {
     console.log(chalk.gray(` Downloading from ${hostname} ...`));
 
     const zipDest = `$env:TEMP\\win-acme.zip`;
-    if (await downloadFile(url, zipDest)) {
+    lastDownloadError = '';
+    if (await downloadFile(url, zipDest, true)) {
       console.log(chalk.gray(' Extracting win-acme ...\n'));
       await run(`New-Item -ItemType Directory -Force -Path '${WINACME_DEST}'`);
       await run(`Expand-Archive -Path '${zipDest}' -DestinationPath '${WINACME_DEST}' -Force`);
@@ -541,6 +600,9 @@ async function installCertbot() {
       console.log(chalk.yellow(' Extraction succeeded but verification failed, trying next...\n'));
     } else {
       console.log(chalk.yellow(` Could not download from ${hostname}`));
+      if (lastDownloadError) {
+        console.log(chalk.gray(` Error: ${lastDownloadError.substring(0, 200)}\n`));
+      }
     }
   }
 
@@ -556,7 +618,8 @@ async function installCertbot() {
     const hostname = new URL(url).hostname;
     step(`Downloading certbot installer from ${hostname} ...`);
 
-    if (await downloadFile(url, INSTALLER_DEST)) {
+    lastDownloadError = '';
+    if (await downloadFile(url, INSTALLER_DEST, true)) {
       console.log(chalk.gray(' Running installer silently ...\n'));
       const ok = await runNsisInstaller(INSTALLER_DEST);
       await run(`Remove-Item -Force '${INSTALLER_DEST}' -ErrorAction SilentlyContinue`);
@@ -564,6 +627,9 @@ async function installCertbot() {
       console.log(chalk.yellow(' Installer ran but certbot not detected, trying next...\n'));
     } else {
       console.log(chalk.yellow(` Could not download from ${hostname}`));
+      if (lastDownloadError) {
+        console.log(chalk.gray(` Error: ${lastDownloadError.substring(0, 200)}\n`));
+      }
     }
   }
 
@@ -580,9 +646,28 @@ async function installCertbot() {
       type: 'list',
       name: 'localChoice',
       message: 'What would you like to do?',
-      choices: ['Specify local installer path', 'Cancel'],
+      choices: [
+        'Open download page in browser',
+        'Specify local installer path',
+        'Cancel'
+      ],
     }]));
   } catch { return { success: false }; }
+
+  if (localChoice === 'Open download page in browser') {
+    console.log(chalk.cyan('\n Opening download pages in browser...'));
+    console.log(chalk.gray(' Download either win-acme.zip or certbot installer, then re-run this tool.\n'));
+
+    // Open win-acme releases
+    await run('Start-Process "https://github.com/win-acme/win-acme/releases/latest"');
+    // Also open EFF certbot page
+    await run('Start-Process "https://certbot.eff.org/instructions?ws=other&os=windows"');
+
+    console.log(chalk.green('✓ Browser opened. Download the installer, then run:'));
+    console.log(chalk.cyan('  easy-devops → SSL Manager → Install certbot → Specify local installer path\n'));
+
+    return { success: false };
+  }
 
   if (localChoice === 'Specify local installer path') {
     let localPath;
