@@ -63,9 +63,13 @@ function Write-Err  { param([string]$msg) Write-Host "      ERROR   $msg" -Foreg
 function Write-Info { param([string]$msg) Write-Host "             $msg"  -ForegroundColor Gray   }
 
 function Refresh-Path {
-  # Re-read NVM env vars that nvm-windows writes to User scope
-  $nvmHome    = [System.Environment]::GetEnvironmentVariable('NVM_HOME',    'User')
+  # Read NVM vars from User scope, fall back to Machine scope
+  # (nvm-windows writes to Machine on system-wide installs)
+  $nvmHome = [System.Environment]::GetEnvironmentVariable('NVM_HOME', 'User')
+  if (-not $nvmHome) { $nvmHome = [System.Environment]::GetEnvironmentVariable('NVM_HOME', 'Machine') }
   $nvmSymlink = [System.Environment]::GetEnvironmentVariable('NVM_SYMLINK', 'User')
+  if (-not $nvmSymlink) { $nvmSymlink = [System.Environment]::GetEnvironmentVariable('NVM_SYMLINK', 'Machine') }
+
   if ($nvmHome)    { $env:NVM_HOME    = $nvmHome }
   if ($nvmSymlink) { $env:NVM_SYMLINK = $nvmSymlink }
 
@@ -77,6 +81,13 @@ function Refresh-Path {
   if ($nvmSymlink) { $raw = $raw -ireplace [regex]::Escape('%NVM_SYMLINK%'), $nvmSymlink }
 
   $env:Path = $raw
+
+  # Ensure NVM_SYMLINK is in PATH even if the registry entry was already absolute
+  if ($nvmSymlink -and (Test-Path $nvmSymlink -ErrorAction SilentlyContinue)) {
+    if ($env:Path -notlike "*$([regex]::Escape($nvmSymlink))*") {
+      $env:Path = "$nvmSymlink;$env:Path"
+    }
+  }
 }
 
 # Find nvm.exe: checks PATH first, then known install locations
@@ -354,7 +365,7 @@ if ($KeepNode) {
     Write-Warn "Using fallback version $NODE_FALLBACK."
     $script:ltsVersions = @([PSCustomObject]@{ version = "v$NODE_FALLBACK.0.0"; lts = "LTS" })
   }
-  Add-Result "Node.js release list" $true "@($script:ltsVersions).Count LTS versions"
+  Add-Result "Node.js release list" $true "$(@($script:ltsVersions).Count) LTS versions fetched"
 }
 
 # ─── Step 3: Node.js version selection ───────────────────────────────────────
@@ -555,26 +566,32 @@ if ($NODE_ACTION -eq "keep") {
       Write-Warn "nvm not found on PATH -- open a new terminal and run: nvm install $NODE_TARGET"
       Add-Result "Node.js install" $false "PATH refresh needed -- open a new terminal"
     } else {
+      # Run nvm install + use in their own try-catch so node check never gets caught here
+      $nvmInstallOK = $false
       try {
         & $nvmExe install $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
         & $nvmExe use     $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
         Refresh-Path
+        $nvmInstallOK = $true
+      } catch {
+        Write-Warn "nvm error: $_"
+        Write-Warn "Open a new terminal and run:  nvm install $NODE_TARGET"
+        Add-Result "Node.js install" $false "nvm error -- see above"
+      }
 
-        $raw = (& node --version 2>$null).Trim()
+      if ($nvmInstallOK) {
+        $raw = ""
+        try { $raw = (& node --version 2>&1).Trim() } catch {}
         if ($raw -match '^v') {
           $nodeVersion = $raw
           Write-OK "Node.js $nodeVersion installed and active"
           Add-Result "Node.js install" $true $nodeVersion
           $nodeOK = $true
         } else {
-          Write-Warn "nvm install ran but node is not yet on PATH"
+          Write-Warn "nvm ran but node is not yet on PATH"
           Write-Warn "Open a NEW terminal, then run:  nvm use $NODE_TARGET"
           Add-Result "Node.js install" $false "PATH refresh needed -- open a new terminal"
         }
-      } catch {
-        Write-Warn "nvm error: $_"
-        Write-Warn "Open a new terminal and run:  nvm install $NODE_TARGET"
-        Add-Result "Node.js install" $false "Manual step needed"
       }
     }
   } elseif ($nvmReady -and $nodeOK -and ($NODE_ACTION -eq "upgrade" -or $NODE_ACTION -eq "switch")) {
@@ -586,12 +603,22 @@ if ($NODE_ACTION -eq "keep") {
       Add-Result "Node.js install" $false "PATH refresh needed"
       $nodeOK = $false
     } else {
+      $nvmInstallOK = $false
       try {
         & $nvmExe install $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
         & $nvmExe use     $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
         Refresh-Path
+        $nvmInstallOK = $true
+      } catch {
+        Write-Warn "nvm error: $_"
+        Write-Warn "Open a new terminal and run:  nvm use $NODE_TARGET"
+        Add-Result "Node.js install" $false "nvm error -- see above"
+        $nodeOK = $false
+      }
 
-        $raw = (& node --version 2>$null).Trim()
+      if ($nvmInstallOK) {
+        $raw = ""
+        try { $raw = (& node --version 2>&1).Trim() } catch {}
         if ($raw -match '^v') {
           $nodeVersion = $raw
           Write-OK "Node.js $nodeVersion active"
@@ -602,10 +629,6 @@ if ($NODE_ACTION -eq "keep") {
           Add-Result "Node.js install" $false "PATH refresh needed"
           $nodeOK = $false
         }
-      } catch {
-        Write-Warn "nvm error: $_ -- open a new terminal and run: nvm use $NODE_TARGET"
-        Add-Result "Node.js install" $false "Manual step needed"
-        $nodeOK = $false
       }
     }
   } elseif (-not $nvmReady -and $nodeOK) {
