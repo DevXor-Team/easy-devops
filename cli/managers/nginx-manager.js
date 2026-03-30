@@ -15,6 +15,7 @@ import inquirer from 'inquirer';
 import ora from 'ora';
 import { run, runLive } from '../../core/shell.js';
 import { loadConfig } from '../../core/config.js';
+import { ensureNginxInclude } from '../../core/nginx-conf-generator.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -51,6 +52,7 @@ async function getNginxStatus(nginxDir) {
 // ─── testConfig ───────────────────────────────────────────────────────────────
 
 async function testConfig(nginxExe, nginxDir) {
+  await ensureNginxInclude(nginxDir);
   const cmd = isWindows ? `& "${nginxExe}" -t` : 'nginx -t';
   const result = await run(cmd, { cwd: nginxDir });
   return {

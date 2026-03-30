@@ -11,6 +11,63 @@ import fs from 'fs/promises';
 import path from 'path';
 import { loadConfig } from './config.js';
 
+const isWindows = process.platform === 'win32';
+
+/** Returns the conf.d directory for domain config files. */
+function getConfDDir(nginxDir) {
+  return isWindows
+    ? path.join(nginxDir, 'conf', 'conf.d')
+    : path.join(nginxDir, 'conf.d');
+}
+
+/** Returns the path to nginx.conf. */
+function getNginxConfPath(nginxDir) {
+  return isWindows
+    ? path.join(nginxDir, 'conf', 'nginx.conf')
+    : path.join(nginxDir, 'nginx.conf');
+}
+
+/** Returns the include directive line for this platform. */
+function buildIncludeLine(nginxDir) {
+  if (isWindows) {
+    const fwd = nginxDir.replace(/\\/g, '/');
+    return `    include "${fwd}/conf/conf.d/*.conf";`;
+  }
+  return `    include ${nginxDir}/conf.d/*.conf;`;
+}
+
+/**
+ * Ensures that nginx.conf contains an include directive for conf.d/*.conf.
+ * If the line is missing it is inserted just before the closing } of the http block.
+ * @param {string} nginxDir
+ */
+export async function ensureNginxInclude(nginxDir) {
+  const confPath = getNginxConfPath(nginxDir);
+
+  let content;
+  try {
+    content = await fs.readFile(confPath, 'utf8');
+  } catch {
+    return; // nginx.conf not present yet — skip silently
+  }
+
+  // Already has a conf.d include
+  if (/include\s+[^\n]*conf\.d[^\n]*\*\.conf/.test(content)) return;
+
+  const includeLine = buildIncludeLine(nginxDir);
+
+  // Insert before the last } in the file (closes the http block)
+  const lastBrace = content.lastIndexOf('}');
+  if (lastBrace === -1) return;
+
+  const newContent =
+    content.slice(0, lastBrace) +
+    `${includeLine}\n` +
+    content.slice(lastBrace);
+
+  await fs.writeFile(confPath, newContent, 'utf8');
+}
+
 // ─── DOMAIN DEFAULTS (v2 schema) ─────────────────────────────────────────────
 
 export const DOMAIN_DEFAULTS = {
@@ -274,12 +331,16 @@ export function buildConf(domain, nginxDir, certbotDir) {
  */
 export async function generateConf(domain) {
   const { nginxDir, certbotDir } = loadConfig();
-  const confPath = path.join(nginxDir, 'conf.d', `${domain.name}.conf`);
+  const confDir = getConfDDir(nginxDir);
+  const confPath = path.join(confDir, `${domain.name}.conf`);
   const confContent = buildConf(domain, nginxDir, certbotDir);
 
   // Ensure conf.d directory exists
-  await fs.mkdir(path.dirname(confPath), { recursive: true });
+  await fs.mkdir(confDir, { recursive: true });
   await fs.writeFile(confPath, confContent, 'utf8');
+
+  // Ensure nginx.conf includes conf.d
+  await ensureNginxInclude(nginxDir);
 
   // Update domain with config file path
   domain.configFile = confPath;

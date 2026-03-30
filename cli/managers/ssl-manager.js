@@ -242,25 +242,68 @@ async function renewExpiring(certs) {
 // ─── installCertbot ───────────────────────────────────────────────────────────
 
 async function installCertbot() {
-  if (isWindows) {
-    // Official EFF certbot package via winget — installs to
-    // C:\Program Files\Certbot\bin\ and adds it to the system PATH.
-    // pip install certbot is NOT used: it lands in a user Python Scripts
-    // folder that is not on PATH and cannot renew certs system-wide.
+  if (!isWindows) {
+    const exitCode = await runLive('sudo apt-get install -y certbot', { timeout: 180000 });
+    return { success: exitCode === 0 };
+  }
+
+  // ── Windows: winget → Chocolatey → direct EFF installer ──────────────────────
+
+  // 1. Try winget (Windows 10/11 desktop; not on Windows Server by default)
+  const wingetCheck = await run('where.exe winget 2>$null');
+  if (wingetCheck.success && wingetCheck.stdout.trim().length > 0) {
     console.log(chalk.gray('\n  Installing via winget (EFF.Certbot) ...\n'));
     const exitCode = await runLive(
       'winget install -e --id EFF.Certbot --accept-package-agreements --accept-source-agreements',
       { timeout: 180000 },
     );
-    if (exitCode !== 0) return { success: false };
-    // winget updates the system PATH but the current session won't see it yet.
-    // Verify via the known exe path directly.
-    const check = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
-    return { success: check.stdout.trim().toLowerCase() === 'true' };
+    if (exitCode === 0) {
+      const check = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
+      return { success: check.stdout.trim().toLowerCase() === 'true' };
+    }
+    console.log(chalk.yellow('  winget failed, trying Chocolatey...\n'));
   }
 
-  const exitCode = await runLive('sudo apt-get install -y certbot', { timeout: 180000 });
-  return { success: exitCode === 0 };
+  // 2. Try Chocolatey (common on Windows Server)
+  const chocoCheck = await run('where.exe choco 2>$null');
+  if (chocoCheck.success && chocoCheck.stdout.trim().length > 0) {
+    console.log(chalk.gray('\n  Installing via Chocolatey ...\n'));
+    const exitCode = await runLive('choco install certbot -y', { timeout: 180000 });
+    if (exitCode === 0) {
+      const check = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
+      return { success: check.stdout.trim().toLowerCase() === 'true' };
+    }
+    console.log(chalk.yellow('  Chocolatey failed, trying direct download...\n'));
+  }
+
+  // 3. Direct download — official EFF installer (NSIS, supports /S silent flag)
+  const installerUrl = 'https://dl.eff.org/certbot-beta-installer-win_amd64_signed.exe';
+
+  console.log(chalk.gray('\n  Downloading certbot installer from dl.eff.org ...\n'));
+
+  const downloadResult = await run(
+    `$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${installerUrl}' -OutFile "$env:TEMP\\certbot-installer.exe" -UseBasicParsing -TimeoutSec 120`,
+    { timeout: 130000 },
+  );
+
+  if (!downloadResult.success) {
+    console.log(chalk.red('  Download failed: ' + (downloadResult.stderr || downloadResult.stdout)));
+    return { success: false };
+  }
+
+  console.log(chalk.gray('  Running installer silently ...\n'));
+
+  await run(
+    `Start-Process -FilePath "$env:TEMP\\certbot-installer.exe" -ArgumentList '/S' -Wait -NoNewWindow`,
+    { timeout: 120000 },
+  );
+
+  // Cleanup installer
+  await run(`Remove-Item -Force "$env:TEMP\\certbot-installer.exe" -ErrorAction SilentlyContinue`);
+
+  // Verify
+  const check = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
+  return { success: check.stdout.trim().toLowerCase() === 'true' };
 }
 
 // ─── showSslManager ───────────────────────────────────────────────────────────

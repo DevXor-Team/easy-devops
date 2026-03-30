@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { run } from '../../core/shell.js';
 import { loadConfig } from '../../core/config.js';
+import { ensureNginxInclude } from '../../core/nginx-conf-generator.js';
 
 // ─── Error Types ──────────────────────────────────────────────────────────────
 
@@ -21,6 +22,12 @@ export class InvalidFilenameError extends Error { }
 function getNginxDir() {
   const { nginxDir } = loadConfig();
   return nginxDir;
+}
+
+function getConfDDir(nginxDir) {
+  return process.platform === 'win32'
+    ? path.join(nginxDir, 'conf', 'conf.d')
+    : path.join(nginxDir, 'conf.d');
 }
 
 /**
@@ -50,7 +57,7 @@ export function validateFilename(filename) {
     throw new InvalidFilenameError('Invalid filename');
   }
   const nginxDir = getNginxDir();
-  const confDir = path.join(nginxDir, 'conf.d');
+  const confDir = getConfDDir(nginxDir);
   const resolved = path.resolve(path.join(confDir, filename));
   if (!resolved.startsWith(path.resolve(confDir))) {
     throw new InvalidFilenameError('Invalid filename');
@@ -135,6 +142,7 @@ export async function start() {
   }
 
   // Test config before starting
+  await ensureNginxInclude(nginxDir);
   const testResult = await run(`${nginxExe} -t`);
   if (!testResult.success) {
     return { success: false, output: combineOutput(testResult) };
@@ -201,11 +209,13 @@ export async function stop() {
 
 export async function test() {
   const nginxExe = getNginxExe();
+  const nginxDir = getNginxDir();
   const versionResult = await run(`${nginxExe} -v`);
   if (!versionResult.success && !versionResult.stderr.includes('nginx/')) {
     throw new NginxNotFoundError('nginx binary not found');
   }
 
+  await ensureNginxInclude(nginxDir);
   const result = await run(`${nginxExe} -t`);
   return { success: result.success, output: combineOutput(result) };
 }
@@ -214,7 +224,7 @@ export async function test() {
 
 export async function listConfigs() {
   const nginxDir = getNginxDir();
-  const confDir = path.join(nginxDir, 'conf.d');
+  const confDir = getConfDDir(nginxDir);
   let entries;
   try {
     entries = await fs.readdir(confDir);
@@ -228,7 +238,7 @@ export async function listConfigs() {
 export async function getConfig(filename) {
   validateFilename(filename);
   const nginxDir = getNginxDir();
-  const confPath = path.join(nginxDir, 'conf.d', filename);
+  const confPath = path.join(getConfDDir(nginxDir), filename);
   const content = await fs.readFile(confPath, 'utf8');
   return { content };
 }
@@ -236,7 +246,7 @@ export async function getConfig(filename) {
 export async function saveConfig(filename, content) {
   validateFilename(filename);
   const nginxDir = getNginxDir();
-  const confPath = path.join(nginxDir, 'conf.d', filename);
+  const confPath = path.join(getConfDDir(nginxDir), filename);
   const backupPath = confPath + '.bak';
 
   // Backup only if the file already exists (it may be a new file)
@@ -252,6 +262,7 @@ export async function saveConfig(filename, content) {
   await fs.writeFile(confPath, content, 'utf8');
 
   const nginxExe = getNginxExe();
+  await ensureNginxInclude(nginxDir);
   const result = await run(`${nginxExe} -t`);
   if (!result.success) {
     if (hasBackup) {
