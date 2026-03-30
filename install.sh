@@ -23,11 +23,35 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EASYDEVOPS_DIR="${EASYDEVOPS_DIR:-$SCRIPT_DIR}"
 
 # ---------------------------------------------------------------------------
-# Source lib modules
+# Source lib modules (auto-download if running standalone)
 # ---------------------------------------------------------------------------
 LIB_DIR="$SCRIPT_DIR/lib/installer"
+_LIB_BASE="https://raw.githubusercontent.com/omar00050/Easy-DevOps/main/lib/installer"
+_LIB_MODULES="progress.sh detect.sh node-versions.sh picker.sh nvm-bootstrap.sh"
 
-for _module in progress.sh detect.sh node-versions.sh picker.sh nvm-bootstrap.sh; do
+if [ ! -f "$LIB_DIR/progress.sh" ]; then
+  printf 'Lib modules not found locally — downloading from GitHub...\n'
+  mkdir -p "$LIB_DIR"
+  _dl_ok=true
+  for _module in $_LIB_MODULES; do
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL "$_LIB_BASE/$_module" -o "$LIB_DIR/$_module" 2>/dev/null || _dl_ok=false
+    elif command -v wget >/dev/null 2>&1; then
+      wget -q "$_LIB_BASE/$_module" -O "$LIB_DIR/$_module" 2>/dev/null || _dl_ok=false
+    else
+      printf 'Error: curl or wget is required to download installer modules.\n' >&2
+      exit 1
+    fi
+  done
+  if [ "$_dl_ok" = "false" ]; then
+    printf 'Error: Failed to download one or more installer modules from GitHub.\n' >&2
+    printf 'Check your internet connection and try again.\n' >&2
+    exit 1
+  fi
+  printf 'Modules downloaded.\n\n'
+fi
+
+for _module in $_LIB_MODULES; do
   if [ ! -f "$LIB_DIR/$_module" ]; then
     printf 'Error: Required module not found: %s/%s\n' "$LIB_DIR" "$_module" >&2
     exit 1
@@ -147,19 +171,35 @@ while [ "$#" -gt 0 ]; do
 done
 
 # ---------------------------------------------------------------------------
-# Source mode / package mode detection (mirrors install.ps1)
+# Install mode detection (mirrors install.ps1 3-mode logic)
 #
-#   Package mode: easy-devops already on PATH (installed via npm -g)
-#                 -> skip npm install + npm link
-#   Source mode:  running from cloned repo or fresh directory
-#                 -> run all 7 steps
+#   source  : package.json with name=easy-devops found in script dir
+#             -> npm install + npm link
+#   update  : easy-devops already on PATH
+#             -> skip install steps
+#   npm     : standalone download, not in project dir
+#             -> npm install -g easy-devops
 # ---------------------------------------------------------------------------
-PACKAGE_MODE=false
+SOURCE_MODE=false
+ALREADY_INSTALLED=false
 EXISTING_CMD=""
 
+# Source mode: script is running from the project directory
+if [ -f "$SCRIPT_DIR/package.json" ]; then
+  if command -v node >/dev/null 2>&1; then
+    _pkg_name="$(node -e "try{process.stdout.write(require('$SCRIPT_DIR/package.json').name)}catch(e){}" 2>/dev/null || true)"
+  else
+    _pkg_name="$(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$SCRIPT_DIR/package.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' || true)"
+  fi
+  if [ "$_pkg_name" = "easy-devops" ]; then
+    SOURCE_MODE=true
+  fi
+fi
+
+# Already installed: easy-devops command is on PATH
 if command -v easy-devops >/dev/null 2>&1; then
   EXISTING_CMD="$(command -v easy-devops)"
-  PACKAGE_MODE=true
+  ALREADY_INSTALLED=true
 fi
 
 # ---------------------------------------------------------------------------
@@ -171,12 +211,15 @@ printf '║   Easy DevOps -- Bootstrap Installer ║\n'
 printf '╚══════════════════════════════════════╝\n'
 printf '\n'
 
-if [ "$PACKAGE_MODE" = "true" ]; then
-  printf '  Mode: package  (easy-devops already installed at %s)\n' "$EXISTING_CMD"
-  printf '        Skipping npm install / npm link steps.\n'
+if [ "$ALREADY_INSTALLED" = "true" ]; then
+  printf '  Mode: update  (easy-devops already installed at %s)\n' "$EXISTING_CMD"
+  printf '        Node.js will still be managed; npm steps skipped.\n'
+  printf '\n'
+elif [ "$SOURCE_MODE" = "true" ]; then
+  printf '  Mode: source  (project directory -- npm install + npm link)\n'
   printf '\n'
 else
-  printf '  Mode: source  (installing from project directory)\n'
+  printf '  Mode: npm     (will run: npm install -g easy-devops)\n'
   printf '\n'
 fi
 
@@ -369,40 +412,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 6: npm install
+# Steps 6 + 7: Install Easy DevOps & register CLI
 # ---------------------------------------------------------------------------
-if [ "$PACKAGE_MODE" = "true" ]; then
-  step_done "${STEPS[5]}  (skipped -- package mode)"
-  add_result "npm install" "ok" "Skipped (package mode)"
-else
+
+if [ "$ALREADY_INSTALLED" = "true" ]; then
+  # ── Already installed: skip both steps ──────────────────────────────────────
+  step_done "${STEPS[5]}  (skipped -- easy-devops already installed)"
+  add_result "npm install" "ok" "Skipped (already installed)"
+  step_done "${STEPS[6]}  (skipped -- already registered)"
+  add_result "CLI registered" "ok" "Skipped (already installed)"
+
+elif [ "$SOURCE_MODE" = "true" ]; then
+  # ── Source mode: npm install in project dir + npm link ───────────────────────
   step_running "${STEPS[5]}"
   printf 'Running npm install in %s...\n' "$EASYDEVOPS_DIR"
-  if ! npm install --prefix "$EASYDEVOPS_DIR" 2>&1; then
+  if ! (cd "$EASYDEVOPS_DIR" && npm install 2>&1); then
     die "${STEPS[5]}" "npm install failed" \
       "cd $EASYDEVOPS_DIR && npm install" \
       "npm link"
   fi
   step_done "${STEPS[5]}"
   add_result "npm install" "ok" ""
-fi
 
-# ---------------------------------------------------------------------------
-# Step 7: npm link -- register global command
-# ---------------------------------------------------------------------------
-if [ "$PACKAGE_MODE" = "true" ]; then
-  step_done "${STEPS[6]}  (skipped -- package mode)"
-  add_result "CLI registered" "ok" "Skipped (package mode)"
-else
   step_running "${STEPS[6]}"
   printf 'Registering global command via npm link...\n'
-  _link_ok=false
-  if npm link --prefix "$EASYDEVOPS_DIR" 2>&1; then
-    _link_ok=true
-  elif (cd "$EASYDEVOPS_DIR" && npm link 2>&1); then
-    _link_ok=true
-  fi
-
-  if [ "$_link_ok" = "false" ]; then
+  if ! (cd "$EASYDEVOPS_DIR" && npm link 2>&1); then
     die "${STEPS[6]}" "npm link failed -- could not register global command" \
       "cd $EASYDEVOPS_DIR && npm link" \
       "If permission denied, try: sudo npm link"
@@ -410,13 +444,26 @@ else
 
   # Verify the command is on PATH
   if ! command -v easy-devops >/dev/null 2>&1; then
-    printf 'Warning: easy-devops command not found on PATH yet.\n' >&2
-    printf 'You may need to open a new terminal or run:\n' >&2
+    printf 'Warning: easy-devops not yet on PATH. Open a new terminal or run:\n' >&2
     printf '  export PATH="$(npm bin -g):$PATH"\n' >&2
   fi
-
   step_done "${STEPS[6]}"
   add_result "CLI registered" "ok" ""
+
+else
+  # ── npm global mode: npm install -g easy-devops ──────────────────────────────
+  step_running "${STEPS[5]}"
+  printf 'Running npm install -g easy-devops...\n'
+  if ! npm install -g easy-devops 2>&1; then
+    die "${STEPS[5]}" "npm install -g easy-devops failed" \
+      "npm install -g easy-devops" \
+      "If permission denied, try: sudo npm install -g easy-devops"
+  fi
+  step_done "${STEPS[5]}"
+  add_result "npm install" "ok" "npm install -g easy-devops"
+
+  step_done "${STEPS[6]}  (registered via npm install -g)"
+  add_result "CLI registered" "ok" "npm install -g"
 fi
 
 # ---------------------------------------------------------------------------

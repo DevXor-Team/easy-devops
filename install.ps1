@@ -63,8 +63,43 @@ function Write-Err  { param([string]$msg) Write-Host "      ERROR   $msg" -Foreg
 function Write-Info { param([string]$msg) Write-Host "             $msg"  -ForegroundColor Gray   }
 
 function Refresh-Path {
-  $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
-              [System.Environment]::GetEnvironmentVariable('Path', 'User')
+  # Re-read NVM env vars that nvm-windows writes to User scope
+  $nvmHome    = [System.Environment]::GetEnvironmentVariable('NVM_HOME',    'User')
+  $nvmSymlink = [System.Environment]::GetEnvironmentVariable('NVM_SYMLINK', 'User')
+  if ($nvmHome)    { $env:NVM_HOME    = $nvmHome }
+  if ($nvmSymlink) { $env:NVM_SYMLINK = $nvmSymlink }
+
+  $raw = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+         [System.Environment]::GetEnvironmentVariable('Path', 'User')
+
+  # Expand literal %NVM_HOME% / %NVM_SYMLINK% tokens nvm-windows may have written
+  if ($nvmHome)    { $raw = $raw -ireplace [regex]::Escape('%NVM_HOME%'),    $nvmHome }
+  if ($nvmSymlink) { $raw = $raw -ireplace [regex]::Escape('%NVM_SYMLINK%'), $nvmSymlink }
+
+  $env:Path = $raw
+}
+
+# Find nvm.exe: checks PATH first, then known install locations
+function Find-NvmExe {
+  try {
+    $f = (& where.exe nvm 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $f) { return 'nvm' }
+  } catch {}
+
+  $candidates = @()
+  if ($env:NVM_HOME)    { $candidates += Join-Path $env:NVM_HOME    'nvm.exe' }
+  if ($env:APPDATA)     { $candidates += Join-Path $env:APPDATA     'nvm\nvm.exe' }
+  if ($env:ProgramData) { $candidates += Join-Path $env:ProgramData 'nvm\nvm.exe' }
+  $candidates += 'C:\ProgramData\nvm\nvm.exe'
+
+  foreach ($c in $candidates) {
+    if (Test-Path $c -ErrorAction SilentlyContinue) {
+      $dir = Split-Path $c -Parent
+      if ($env:Path -notlike "*$dir*") { $env:Path = "$dir;$env:Path" }
+      return $c
+    }
+  }
+  return $null
 }
 
 function Get-NodeMajor {
@@ -204,18 +239,29 @@ function Select-NodeVersion {
 }
 
 # ─── Detect install mode ──────────────────────────────────────────────────────
-# Source mode  = running from a git-cloned directory -> need npm install + link
-# Package mode = easy-devops already globally installed via npm
+# source  = running from a git-cloned project directory  -> npm install + npm link
+# update  = easy-devops already on PATH                  -> skip install steps
+# npm     = downloaded installer standalone              -> npm install -g easy-devops
 
-$scriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Path
-$isSourceMode = $true
-$existingCmd  = $null
+$scriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
+$packageJson = Join-Path $scriptDir 'package.json'
 
+$isSourceMode       = $false
+$isAlreadyInstalled = $false
+$existingCmd        = $null
+
+# Source mode: script dir has this project's package.json
+if (Test-Path $packageJson) {
+  try {
+    $pkg = Get-Content $packageJson -Raw | ConvertFrom-Json
+    if ($pkg.name -eq 'easy-devops') { $isSourceMode = $true }
+  } catch {}
+}
+
+# Already installed: easy-devops on PATH
 try {
   $existingCmd = (& where.exe easy-devops 2>$null)
-  if ($LASTEXITCODE -eq 0 -and $existingCmd) {
-    $isSourceMode = $false
-  }
+  if ($LASTEXITCODE -eq 0 -and $existingCmd) { $isAlreadyInstalled = $true }
 } catch {}
 
 # ─── Banner ───────────────────────────────────────────────────────────────────
@@ -225,13 +271,14 @@ Write-Host "  ==========================================" -ForegroundColor Cyan
 Write-Host "    Easy DevOps  --  Windows Installer" -ForegroundColor Cyan
 Write-Host "  ==========================================" -ForegroundColor Cyan
 
-if (-not $isSourceMode) {
-  Write-Host ""
-  Write-Host "  Mode: package  (easy-devops already installed at $existingCmd)" -ForegroundColor DarkGray
-  Write-Host "        Skipping npm install / npm link steps." -ForegroundColor DarkGray
+Write-Host ""
+if ($isAlreadyInstalled) {
+  Write-Host "  Mode: update  (easy-devops already installed at $existingCmd)" -ForegroundColor DarkGray
+  Write-Host "        Node.js will still be managed; npm steps skipped." -ForegroundColor DarkGray
+} elseif ($isSourceMode) {
+  Write-Host "  Mode: source  (project directory -- npm install + npm link)" -ForegroundColor DarkGray
 } else {
-  Write-Host ""
-  Write-Host "  Mode: source  (installing from project directory)" -ForegroundColor DarkGray
+  Write-Host "  Mode: npm     (will run: npm install -g easy-devops)" -ForegroundColor DarkGray
 }
 
 # ─── Step 1: Detect system ───────────────────────────────────────────────────
@@ -404,15 +451,35 @@ if ($NODE_ACTION -eq "keep") {
 } else {
   Write-Step "Installing nvm-windows"
 
-  # Check if nvm-windows is already present
-  try {
-    $nvmVersion = (& nvm version 2>$null).Trim()
-    if ($LASTEXITCODE -eq 0 -and $nvmVersion) {
-      Write-OK "nvm-windows $nvmVersion already installed"
-      Add-Result "nvm-windows" $true $nvmVersion
-      $nvmReady = $true
+  # Check if nvm-windows is already present (check PATH + known locations)
+  Refresh-Path
+  $nvmExeCheck = Find-NvmExe
+  if ($nvmExeCheck) {
+    try {
+      $nvmVersion = (& $nvmExeCheck version 2>$null).Trim()
+      if ($nvmVersion) {
+        Write-OK "nvm-windows $nvmVersion already installed"
+        Add-Result "nvm-windows" $true $nvmVersion
+        $nvmReady = $true
+      }
+    } catch {}
+  }
+
+  if (-not $nvmReady) {
+    # After Refresh-Path, try locating nvm at known paths
+    Refresh-Path
+    $nvmExePath = Find-NvmExe
+    if ($nvmExePath) {
+      try {
+        $nvmVersion = (& $nvmExePath version 2>$null).Trim()
+        if ($nvmVersion) {
+          Write-OK "nvm-windows $nvmVersion already installed (found after PATH refresh)"
+          Add-Result "nvm-windows" $true $nvmVersion
+          $nvmReady = $true
+        }
+      } catch {}
     }
-  } catch {}
+  }
 
   if (-not $nvmReady) {
     $skipNvm  = $false
@@ -483,50 +550,63 @@ if ($NODE_ACTION -eq "keep") {
   if ($nvmReady -and -not $nodeOK) {
     # No compatible Node.js: install chosen version
     Write-Info "Installing Node.js $NODE_TARGET via nvm..."
-    try {
-      & nvm install $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
-      & nvm use     $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
-      Refresh-Path
+    $nvmExe = Find-NvmExe
+    if (-not $nvmExe) {
+      Write-Warn "nvm not found on PATH -- open a new terminal and run: nvm install $NODE_TARGET"
+      Add-Result "Node.js install" $false "PATH refresh needed -- open a new terminal"
+    } else {
+      try {
+        & $nvmExe install $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
+        & $nvmExe use     $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
+        Refresh-Path
 
-      $raw = (& node --version 2>$null).Trim()
-      if ($raw -match '^v') {
-        $nodeVersion = $raw
-        Write-OK "Node.js $nodeVersion installed and active"
-        Add-Result "Node.js install" $true $nodeVersion
-        $nodeOK = $true
-      } else {
-        Write-Warn "nvm install ran but node is not yet on PATH"
-        Write-Warn "Open a NEW terminal, then run:  nvm use $NODE_TARGET"
-        Add-Result "Node.js install" $false "PATH refresh needed -- open a new terminal"
+        $raw = (& node --version 2>$null).Trim()
+        if ($raw -match '^v') {
+          $nodeVersion = $raw
+          Write-OK "Node.js $nodeVersion installed and active"
+          Add-Result "Node.js install" $true $nodeVersion
+          $nodeOK = $true
+        } else {
+          Write-Warn "nvm install ran but node is not yet on PATH"
+          Write-Warn "Open a NEW terminal, then run:  nvm use $NODE_TARGET"
+          Add-Result "Node.js install" $false "PATH refresh needed -- open a new terminal"
+        }
+      } catch {
+        Write-Warn "nvm error: $_"
+        Write-Warn "Open a new terminal and run:  nvm install $NODE_TARGET"
+        Add-Result "Node.js install" $false "Manual step needed"
       }
-    } catch {
-      Write-Warn "nvm node install error: $_"
-      Write-Warn "Open a new terminal and run:  nvm install $NODE_TARGET"
-      Add-Result "Node.js install" $false "Manual step needed"
     }
   } elseif ($nvmReady -and $nodeOK -and ($NODE_ACTION -eq "upgrade" -or $NODE_ACTION -eq "switch")) {
     # Upgrade or switch: install the selected version
     Write-Info "Installing Node.js $NODE_TARGET via nvm..."
-    try {
-      & nvm install $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
-      & nvm use     $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
-      Refresh-Path
+    $nvmExe = Find-NvmExe
+    if (-not $nvmExe) {
+      Write-Warn "nvm not found -- open a new terminal and run: nvm install $NODE_TARGET && nvm use $NODE_TARGET"
+      Add-Result "Node.js install" $false "PATH refresh needed"
+      $nodeOK = $false
+    } else {
+      try {
+        & $nvmExe install $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
+        & $nvmExe use     $NODE_TARGET 2>&1 | ForEach-Object { Write-Info "  $_" }
+        Refresh-Path
 
-      $raw = (& node --version 2>$null).Trim()
-      if ($raw -match '^v') {
-        $nodeVersion = $raw
-        Write-OK "Node.js $nodeVersion active"
-        Add-Result "Node.js install" $true $nodeVersion
-        $nodeOK = $true
-      } else {
-        Write-Warn "node not yet on PATH -- open a new terminal and run: nvm use $NODE_TARGET"
-        Add-Result "Node.js install" $false "PATH refresh needed"
+        $raw = (& node --version 2>$null).Trim()
+        if ($raw -match '^v') {
+          $nodeVersion = $raw
+          Write-OK "Node.js $nodeVersion active"
+          Add-Result "Node.js install" $true $nodeVersion
+          $nodeOK = $true
+        } else {
+          Write-Warn "node not yet on PATH -- open a new terminal and run: nvm use $NODE_TARGET"
+          Add-Result "Node.js install" $false "PATH refresh needed"
+          $nodeOK = $false
+        }
+      } catch {
+        Write-Warn "nvm error: $_ -- open a new terminal and run: nvm use $NODE_TARGET"
+        Add-Result "Node.js install" $false "Manual step needed"
         $nodeOK = $false
       }
-    } catch {
-      Write-Warn "nvm error: $_ -- open a new terminal and run: nvm use $NODE_TARGET"
-      Add-Result "Node.js install" $false "Manual step needed"
-      $nodeOK = $false
     }
   } elseif (-not $nvmReady -and $nodeOK) {
     # nvm not available but Node >= 18 already present: skip
@@ -539,82 +619,106 @@ if ($NODE_ACTION -eq "keep") {
   }
 }
 
-# ─── Source-mode steps ────────────────────────────────────────────────────────
+# ─── Steps 6 + 7: Install Easy DevOps & register CLI ─────────────────────────
 
-if (-not $isSourceMode) {
-  # Package mode: steps 6+7 skipped
-  Write-Step "Installing Easy DevOps dependencies"
-  Write-OK "Skipped (package mode -- easy-devops already installed)"
-  Add-Result "npm install" $true "Skipped (package mode)"
+if ($isAlreadyInstalled) {
+  # ── Already installed: skip both steps ──────────────────────────────────────
+  Write-Step "Installing Easy DevOps"
+  Write-OK "Skipped (easy-devops already installed at $existingCmd)"
+  Add-Result "npm install" $true "Skipped (already installed)"
 
   Write-Step "Registering global command"
-  Write-OK "Skipped (package mode)"
-  Add-Result "CLI registered" $true "Skipped (package mode)"
+  Write-OK "Skipped (already registered)"
+  Add-Result "CLI registered" $true "Skipped (already installed)"
+
+} elseif ($isSourceMode) {
+  # ── Source mode: npm install in project dir + npm link ───────────────────────
+  Write-Step "Installing Easy DevOps dependencies"
+
+  if (-not $nodeOK) {
+    Write-Warn "Skipping -- Node.js is not ready. Open a new terminal and re-run install.ps1."
+    Add-Result "npm install" $false "Skipped -- Node.js not ready"
+  } else {
+    try {
+      Push-Location $scriptDir
+      Write-Info "Running npm install..."
+      & npm install
+      if ($LASTEXITCODE -ne 0) {
+        Write-Err "npm install failed (exit code $LASTEXITCODE)"
+        Add-Result "npm install" $false "Exit code $LASTEXITCODE"
+        exit 1
+      }
+      Write-OK "All dependencies installed"
+      Add-Result "npm install" $true ""
+    } catch {
+      Write-Err "npm install error: $_"
+      Add-Result "npm install" $false "$_"
+      exit 1
+    } finally {
+      Pop-Location
+    }
+  }
+
+  Write-Step "Registering global command"
+
+  if (-not $nodeOK) {
+    Write-Warn "Skipping -- Node.js is not ready"
+    Add-Result "CLI registered" $false "Skipped -- Node.js not ready"
+  } else {
+    try {
+      Push-Location $scriptDir
+      & npm link
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warn "npm link failed -- CLI won't be globally available"
+        Write-Warn "You can still run:  node cli/index.js"
+        Add-Result "CLI registered" $false "Exit code $LASTEXITCODE"
+      } else {
+        Write-OK "easy-devops command linked globally"
+        Add-Result "CLI registered" $true ""
+      }
+    } catch {
+      Write-Warn "npm link failed: $_ -- run: node cli/index.js"
+      Add-Result "CLI registered" $false "$_"
+    } finally {
+      Pop-Location
+    }
+  }
+
 } else {
+  # ── npm global mode: npm install -g easy-devops ──────────────────────────────
+  Write-Step "Installing Easy DevOps"
 
-# ─── Step 6: npm install ─────────────────────────────────────────────────────
-
-Write-Step "Installing Easy DevOps dependencies"
-
-$packageJson = Join-Path $scriptDir "package.json"
-if (-not (Test-Path $packageJson)) {
-  Write-Err "package.json not found at: $packageJson"
-  Write-Err "Run this installer from the Easy DevOps project root."
-  exit 1
-}
-
-if (-not $nodeOK) {
-  Write-Warn "Skipping -- Node.js is not ready. Re-run install.ps1 after setting up Node.js."
-  Add-Result "npm install" $false "Skipped -- Node.js not ready"
-} else {
-  try {
-    Push-Location $scriptDir
-    Write-Info "Running npm install..."
-    & npm install
-    if ($LASTEXITCODE -ne 0) {
-      Write-Err "npm install failed (exit code $LASTEXITCODE)"
-      Add-Result "npm install" $false "Exit code $LASTEXITCODE"
+  if (-not $nodeOK) {
+    Write-Warn "Skipping -- Node.js is not ready."
+    Write-Warn "Open a new terminal and run:  npm install -g easy-devops"
+    Add-Result "npm install" $false "Skipped -- Node.js not ready"
+  } else {
+    try {
+      Write-Info "Running npm install -g easy-devops..."
+      & npm install -g easy-devops
+      if ($LASTEXITCODE -ne 0) {
+        Write-Err "npm install -g easy-devops failed (exit code $LASTEXITCODE)"
+        Add-Result "npm install" $false "Exit code $LASTEXITCODE"
+        exit 1
+      }
+      Write-OK "easy-devops installed globally"
+      Add-Result "npm install" $true "npm install -g easy-devops"
+    } catch {
+      Write-Err "npm install -g error: $_"
+      Add-Result "npm install" $false "$_"
       exit 1
     }
-    Write-OK "All dependencies installed"
-    Add-Result "npm install" $true ""
-  } catch {
-    Write-Err "npm install error: $_"
-    Add-Result "npm install" $false "$_"
-    exit 1
-  } finally {
-    Pop-Location
+  }
+
+  Write-Step "Registering global command"
+  if ($nodeOK) {
+    Write-OK "Registered via npm install -g"
+    Add-Result "CLI registered" $true "npm install -g"
+  } else {
+    Write-Warn "Skipped -- Node.js not ready"
+    Add-Result "CLI registered" $false "Skipped -- Node.js not ready"
   }
 }
-
-# ─── Step 7: npm link ────────────────────────────────────────────────────────
-
-Write-Step "Registering global command"
-
-if (-not $nodeOK) {
-  Write-Warn "Skipping -- Node.js is not ready"
-  Add-Result "CLI registered" $false "Skipped -- Node.js not ready"
-} else {
-  try {
-    Push-Location $scriptDir
-    & npm link
-    if ($LASTEXITCODE -ne 0) {
-      Write-Warn "npm link failed -- CLI won't be globally available"
-      Write-Warn "You can still run:  node cli/index.js"
-      Add-Result "CLI registered" $false "Exit code $LASTEXITCODE"
-    } else {
-      Write-OK "easy-devops command linked globally"
-      Add-Result "CLI registered" $true ""
-    }
-  } catch {
-    Write-Warn "npm link failed: $_ -- run: node cli/index.js"
-    Add-Result "CLI registered" $false "$_"
-  } finally {
-    Pop-Location
-  }
-}
-
-} # end source-mode block
 
 # ─── Summary (mirrors install.sh summary block) ───────────────────────────────
 
