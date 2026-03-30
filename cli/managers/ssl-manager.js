@@ -15,6 +15,7 @@ import inquirer from 'inquirer';
 import ora from 'ora';
 import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { run, runLive } from '../../core/shell.js';
 import { loadConfig } from '../../core/config.js';
 
@@ -340,23 +341,7 @@ async function installCertbot() {
     if (r.success) return true;
     if (showErrors && r.stderr) lastDownloadError = `Invoke-WebRequest: ${r.stderr}`;
 
-    // Method 2: WebClient with TLS
-    r = await safeRun(
-      `${tlsSetup}; (New-Object System.Net.WebClient).DownloadFile('${safeUrl}','${safeDest}')`,
-      { timeout: 130000 },
-    );
-    if (r.success) return true;
-    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `WebClient: ${r.stderr}`;
-
-    // Method 3: BITS Transfer
-    r = await safeRun(
-      `Import-Module BitsTransfer -ErrorAction SilentlyContinue; Start-BitsTransfer -Source '${safeUrl}' -Destination '${safeDest}' -ErrorAction Stop`,
-      { timeout: 130000 },
-    );
-    if (r.success) return true;
-    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `BITS: ${r.stderr}`;
-
-    // Method 4: curl.exe (works on Windows 10+)
+    // Method 2: curl.exe (works on Windows 10+, often bypasses AV detection)
     if (hasCurl) {
       r = await safeRun(
         `curl.exe -L --ssl-no-revoke --max-time 120 -o '${safeDest}' '${safeUrl}'`,
@@ -366,7 +351,15 @@ async function installCertbot() {
       if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `curl: ${r.stderr}`;
     }
 
-    // Method 5: HttpClient with custom handler
+    // Method 3: WebClient with TLS
+    r = await safeRun(
+      `${tlsSetup}; (New-Object System.Net.WebClient).DownloadFile('${safeUrl}','${safeDest}')`,
+      { timeout: 130000 },
+    );
+    if (r.success) return true;
+    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `WebClient: ${r.stderr}`;
+
+    // Method 4: HttpClient with custom handler
     r = await safeRun(
       `${tlsSetup}; $handler=[System.Net.Http.HttpClientHandler]::new(); $handler.ServerCertificateCustomValidationCallback={$true}; $handler.AllowAutoRedirect=$true; $hc=[System.Net.Http.HttpClient]::new($handler); $hc.DefaultRequestHeaders.Add('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64)'); $hc.Timeout=[TimeSpan]::FromSeconds(120); $bytes=$hc.GetByteArrayAsync('${safeUrl}').GetAwaiter().GetResult(); [System.IO.File]::WriteAllBytes('${safeDest}',$bytes)`,
       { timeout: 130000 },
@@ -374,53 +367,17 @@ async function installCertbot() {
     if (r.success) return true;
     if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `HttpClient: ${r.stderr}`;
 
-    // Method 6: Certutil (built-in Windows tool)
+    // Method 5: BITS Transfer (background transfers)
     r = await safeRun(
-      `certutil.exe -urlcache -split -f "${safeUrl}" "${safeDest}"`,
+      `Import-Module BitsTransfer -ErrorAction SilentlyContinue; Start-BitsTransfer -Source '${safeUrl}' -Destination '${safeDest}' -ErrorAction Stop`,
       { timeout: 130000 },
     );
     if (r.success) return true;
-    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `certutil: ${r.stderr}`;
+    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `BITS: ${r.stderr}`;
 
-    // Method 7: PowerShell with DisableKeepAlive
-    r = await safeRun(
-      `${tlsSetup}; $req=[System.Net.WebRequest]::Create('${safeUrl}'); $req.Method='GET'; $req.KeepAlive=$false; $req.UserAgent='Mozilla/5.0'; $resp=$req.GetResponse(); $stream=$resp.GetResponseStream(); $reader=[System.IO.BinaryReader]::new($stream); $bytes=$reader.ReadBytes($resp.ContentLength); $reader.Close(); [System.IO.File]::WriteAllBytes('${safeDest}',$bytes)`,
-      { timeout: 130000 },
-    );
-    if (r.success) return true;
-    if (showErrors && r.stderr && !lastDownloadError) lastDownloadError = `WebRequest: ${r.stderr}`;
+    // Note: certutil.exe removed - it triggers Trojan:Win32/Ceprolad.A detection
 
     return false;
-  }
-
-  // Test network connectivity to common endpoints
-  async function testNetworkConnectivity() {
-    console.log(chalk.cyan('\n Testing network connectivity...'));
-    const tests = [
-      { name: 'GitHub', url: 'https://github.com' },
-      { name: 'Microsoft', url: 'https://microsoft.com' },
-      { name: 'EFF', url: 'https://eff.org' },
-    ];
-    const results = [];
-
-    for (const test of tests) {
-      const r = await run(`curl.exe -I --ssl-no-revoke --max-time 10 "${test.url}"`, { timeout: 15000 });
-      const success = r.success || r.stdout.includes('HTTP') || r.stdout.includes('200');
-      results.push({ name: test.name, success });
-      console.log(chalk.gray(`   ${test.name}: ${success ? chalk.green('✓ Connected') : chalk.red('✗ Failed')}`));
-    }
-
-    const allFailed = results.every(r => !r.success);
-    if (allFailed) {
-      console.log(chalk.yellow('\n   ⚠ All external connections failed.'));
-      console.log(chalk.gray('   This could indicate:'));
-      console.log(chalk.gray('   • Firewall blocking outbound connections'));
-      console.log(chalk.gray('   • Proxy server required'));
-      console.log(chalk.gray('   • DNS resolution issues'));
-      console.log(chalk.gray('   • Antivirus blocking downloads'));
-    }
-    console.log();
-    return results;
   }
 
   async function runNsisInstaller(exePath) {
@@ -445,70 +402,62 @@ async function installCertbot() {
 
   if (!wingetAvailable) {
     console.log(chalk.yellow('\n ⚠ winget is not installed on this system.'));
-    console.log(chalk.gray('   winget (Windows Package Manager) provides the easiest installation method.'));
+    console.log(chalk.gray(' winget (Windows Package Manager) provides the easiest installation method.'));
 
     let installWinget;
     try {
       ({ installWinget } = await inquirer.prompt([{
         type: 'confirm',
         name: 'installWinget',
-        message: 'Would you like to install winget (App Installer) from Microsoft Store?',
+        message: 'Would you like to install winget automatically?',
         default: true,
       }]));
     } catch { /* user cancelled */ }
 
     if (installWinget) {
-      console.log(chalk.cyan('\n Opening Microsoft Store to install App Installer...'));
-      console.log(chalk.gray(' Please complete the installation, then run this command again.\n'));
+      console.log(chalk.cyan('\n Opening winget installer in a new window...'));
+      console.log(chalk.gray(' The installer will run in a separate PowerShell window.'));
+      console.log(chalk.gray(' Please complete the installation in that window.\n'));
 
-      // Try to open Microsoft Store
-      const storeOpened = await run(
-        'Start-Process "ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1"',
-        { timeout: 10000 }
-      ).catch(() => ({ success: false }));
+      // Use the embedded winget-install.ps1 script
+      const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+      const wingetScriptPath = path.join(scriptDir, '..', '..', 'lib', 'installer', 'winget-install.ps1');
 
-      if (storeOpened.success) {
-        console.log(chalk.green(' Microsoft Store opened successfully.'));
-        console.log(chalk.gray(' After installing App Installer, winget will be available.\n'));
+      // Check if the embedded script exists
+      const scriptExists = await run(`Test-Path "${wingetScriptPath}"`);
+      if (scriptExists.stdout.trim().toLowerCase() !== 'true') {
+        console.log(chalk.red('\n Embedded winget installer script not found.'));
+        console.log(chalk.gray(' Expected location: ' + wingetScriptPath + '\n'));
       } else {
-        console.log(chalk.yellow(' Could not open Microsoft Store directly.'));
-        console.log(chalk.gray(' Please manually install "App Installer" from:'));
-        console.log(chalk.cyan(' https://apps.microsoft.com/store/detail/app-installer/9NBLGGH4NNS1\n'));
-      }
+        // Run the installer in a new PowerShell window with -NoExit so user can see output
+        // The script has a built-in -NoExit parameter we can use
+        await run(`Start-Process powershell.exe -ArgumentList '-ExecutionPolicy Bypass -NoProfile -File "${wingetScriptPath}" -NoExit' -Verb RunAs -Wait`);
 
-      // Optional: try direct download of App Installer
-      let tryDownload;
-      try {
-        ({ tryDownload } = await inquirer.prompt([{
-          type: 'confirm',
-          name: 'tryDownload',
-          message: 'Would you like to try downloading App Installer directly?',
-          default: false,
-        }]));
-      } catch { tryDownload = false; }
+        console.log(chalk.gray('\n Winget installer window has closed.'));
+        console.log(chalk.cyan(' Checking if winget is now available...\n'));
 
-      if (tryDownload) {
-        const appInstallerUrl = 'https://aka.ms/getwinget';
-        const appInstallerDest = '$env:TEMP\\AppInstaller.msixbundle';
+        // Give a moment for PATH to update
+        await new Promise(res => setTimeout(res, 2000));
 
-        console.log(chalk.gray('\n Downloading App Installer...'));
-        let downloaded = false; try { downloaded = await downloadFile(appInstallerUrl, appInstallerDest); } catch (err) { if (err.code === 'EPERM' || err.message?.includes('EPERM')) { console.log(chalk.red('\n ? Windows Defender blocked the download.')); console.log(chalk.gray(' Add an exclusion in Windows Defender or download manually.')); console.log(chalk.gray(' Download URL: https://aka.ms/getwinget\n')); } else { console.log(chalk.yellow('\n Download failed: ' + err.message + '\n')); } }
+        // Re-check for winget
+        const recheck = await run('where.exe winget 2>$null');
+        if (recheck.success && recheck.stdout.trim()) {
+          console.log(chalk.green(' ✓ winget installed successfully!\n'));
+          wingetAvailable = true;
+        } else {
+          // Try refreshing PATH from registry and check again
+          console.log(chalk.yellow(' winget not immediately detected. Refreshing PATH...'));
+          await run(`$env:PATH = [System.Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + [System.Environment]::GetEnvironmentVariable('PATH', 'User')`);
+          await new Promise(res => setTimeout(res, 1000));
 
-        if (downloaded) {
-          console.log(chalk.gray(' Running App Installer...'));
-          await run(`Start-Process -FilePath '${appInstallerDest}' -Wait`, { timeout: 300000 });
-
-          // Re-check for winget
-          const recheck = await run('where.exe winget 2>$null');
-          if (recheck.success && recheck.stdout.trim()) {
+          const recheck2 = await run('where.exe winget 2>$null');
+          if (recheck2.success && recheck2.stdout.trim()) {
             console.log(chalk.green('\n ✓ winget installed successfully!\n'));
             wingetAvailable = true;
           } else {
-            console.log(chalk.yellow('\n App Installer ran but winget is not yet available.'));
-            console.log(chalk.gray(' You may need to restart your terminal or sign out/in.\n'));
+            console.log(chalk.yellow('\n winget may have been installed but is not in PATH yet.'));
+            console.log(chalk.gray(' You may need to restart your terminal or computer.\n'));
           }
-        } else {
-          console.log(chalk.yellow('\n Could not download App Installer automatically.\n'));
         }
       }
 
@@ -521,19 +470,7 @@ async function installCertbot() {
     }
   }
 
-  // ── Method 1: winget (win-acme - has better success rate) ─────────────────────
-  if (wingetAvailable) {
-    step('Trying winget (win-acme) ...');
-    console.log(chalk.gray(' Running: winget install win-acme.win-acme\n'));
-    const exitCode = await runLive(
-      'winget install -e --id win-acme.win-acme --accept-package-agreements --accept-source-agreements',
-      { timeout: 180000 },
-    );
-    if (exitCode === 0 || await verifyWinAcme()) return { success: true, client: 'winacme' };
-    console.log(chalk.yellow(' winget win-acme failed, trying next...\n'));
-  }
-
-  // ── Method 2: winget (certbot EFF) ────────────────────────────────────────────
+  // ── Method 1: winget (certbot EFF - most reliable) ────────────────────────────
   if (wingetAvailable) {
     step('Trying winget (EFF.Certbot) ...');
     console.log(chalk.gray(' Running: winget install EFF.Certbot\n'));
@@ -543,6 +480,18 @@ async function installCertbot() {
     );
     if (exitCode === 0 || await verifyCertbot()) return { success: true };
     console.log(chalk.yellow(' winget certbot failed, trying next...\n'));
+  }
+
+  // ── Method 2: winget (win-acme) ───────────────────────────────────────────────
+  if (wingetAvailable) {
+    step('Trying winget (win-acme) ...');
+    console.log(chalk.gray(' Running: winget install win-acme.win-acme\n'));
+    const exitCode = await runLive(
+      'winget install -e --id win-acme.win-acme --accept-package-agreements --accept-source-agreements',
+      { timeout: 180000 },
+    );
+    if (exitCode === 0 || await verifyWinAcme()) return { success: true, client: 'winacme' };
+    console.log(chalk.yellow(' winget win-acme failed, trying next...\n'));
   }
 
   // ── Method 3: Chocolatey (win-acme) ───────────────────────────────────────────
@@ -585,9 +534,6 @@ async function installCertbot() {
   // ── Method 7: Direct download win-acme (ZIP - smaller, no installer) ──────────
   const WINACME_DEST = 'C:\\Program Files\\win-acme';
 
-  // Test network before attempting downloads
-  try { await testNetworkConnectivity(); } catch (err) { console.log(chalk.yellow('Network test failed: ' + err.message)); }
-
   step('Downloading win-acme from GitHub ...');
   const winAcmeUrls = [
     'https://github.com/win-acme/win-acme/releases/latest/download/win-acme.zip',
@@ -600,7 +546,14 @@ async function installCertbot() {
 
     const zipDest = `$env:TEMP\\win-acme.zip`;
     lastDownloadError = '';
-    let dlOk = false; try { dlOk = await downloadFile(url, zipDest, true); } catch (err) { if (err.code === 'EPERM' || err.message?.includes('EPERM')) { console.log(chalk.red('Windows Defender blocked this download.')); console.log(chalk.gray('Use the manual installer option or add a Windows Defender exclusion.')); } } if (dlOk) {
+    let dlOk = false;
+    try { dlOk = await downloadFile(url, zipDest, true); } catch (err) {
+      if (err.code === 'EPERM' || err.message?.includes('EPERM')) {
+        console.log(chalk.red('Windows Defender blocked this download.'));
+        console.log(chalk.gray('Use the manual installer option or add a Windows Defender exclusion.'));
+      }
+    }
+    if (dlOk) {
       console.log(chalk.gray(' Extracting win-acme ...\n'));
       await run(`New-Item -ItemType Directory -Force -Path '${WINACME_DEST}'`);
       await run(`Expand-Archive -Path '${zipDest}' -DestinationPath '${WINACME_DEST}' -Force`);
@@ -632,7 +585,14 @@ async function installCertbot() {
     step(`Downloading certbot installer from ${hostname} ...`);
 
     lastDownloadError = '';
-    let dlOk = false; try { dlOk = await downloadFile(url, INSTALLER_DEST, true); } catch (err) { if (err.code === 'EPERM' || err.message?.includes('EPERM')) { console.log(chalk.red('Windows Defender blocked this download.')); console.log(chalk.gray('Use the manual installer option or add a Windows Defender exclusion.')); } } if (dlOk) {
+    let dlOk = false;
+    try { dlOk = await downloadFile(url, INSTALLER_DEST, true); } catch (err) {
+      if (err.code === 'EPERM' || err.message?.includes('EPERM')) {
+        console.log(chalk.red('Windows Defender blocked this download.'));
+        console.log(chalk.gray('Use the manual installer option or add a Windows Defender exclusion.'));
+      }
+    }
+    if (dlOk) {
       console.log(chalk.gray(' Running installer silently ...\n'));
       const ok = await runNsisInstaller(INSTALLER_DEST);
       await run(`Remove-Item -Force '${INSTALLER_DEST}' -ErrorAction SilentlyContinue`);
@@ -677,7 +637,7 @@ async function installCertbot() {
     await run('Start-Process "https://certbot.eff.org/instructions?ws=other&os=windows"');
 
     console.log(chalk.green('✓ Browser opened. Download the installer, then run:'));
-    console.log(chalk.cyan('  easy-devops → SSL Manager → Install certbot → Specify local installer path\n'));
+    console.log(chalk.cyan(' easy-devops → SSL Manager → Install certbot → Specify local installer path\n'));
 
     return { success: false };
   }
