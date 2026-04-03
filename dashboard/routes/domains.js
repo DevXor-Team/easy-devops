@@ -5,6 +5,7 @@ import { loadConfig } from '../../core/config.js';
 import { getDomains, saveDomains, findDomain, createDomain, DOMAIN_DEFAULTS } from '../lib/domains-db.js';
 import { generateConf, getDefaultCertPaths } from '../lib/nginx-conf-generator.js';
 import { getCertExpiry } from '../lib/cert-reader.js';
+import path from 'path';
 
 const router = express.Router();
 
@@ -37,10 +38,18 @@ function validateDomainName(name) {
   if (!name || typeof name !== 'string') {
     return 'name is required';
   }
-  // Allow wildcards and standard hostnames
-  const validPattern = /^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
-  if (!validPattern.test(name) || name.includes('/') || name.includes(' ')) {
-    return 'Invalid domain name format';
+  // Strip *. prefix defensively — the system adds it; users should not type it
+  const bare = name.startsWith('*.') ? name.slice(2) : name;
+  // Each label: starts and ends with alphanumeric, hyphens allowed in middle
+  // Supports any depth of subdomains: a.b.c.example.com
+  const labelPattern = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
+  const labels = bare.split('.');
+  if (labels.length < 2) {
+    return 'Domain must have at least two labels (e.g. example.com)';
+  }
+  for (const label of labels) {
+    if (!label) return 'Invalid domain name format: empty label';
+    if (!labelPattern.test(label)) return 'Invalid domain name format';
   }
   return null;
 }
@@ -98,9 +107,13 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: nameError });
   }
 
-  const portError = validatePort(body.port);
-  if (portError) {
-    return res.status(400).json({ error: portError });
+  // Port validation is skipped when backendHost is a full external URL
+  const backendIsUrl = /^https?:\/\//i.test(body.backendHost ?? '');
+  if (!backendIsUrl) {
+    const portError = validatePort(body.port);
+    if (portError) {
+      return res.status(400).json({ error: portError });
+    }
   }
 
   // Validate optional fields
@@ -154,6 +167,8 @@ router.post('/', async (req, res) => {
       accessLog: body.advanced?.accessLog ?? true,
       customLocations: body.advanced?.customLocations ?? '',
     },
+    wildcard: body.wildcard ?? false,
+    enabled: true,
   });
 
   // Cert existence check (FR-001): prevent saving a config that references non-existent cert files
@@ -202,8 +217,9 @@ router.put('/:name', async (req, res) => {
 
   const body = req.body ?? {};
 
-  // Validate port if provided
-  if (body.port !== undefined) {
+  // Validate port if provided (skip when backendHost is a full external URL)
+  const backendIsUrl = /^https?:\/\//i.test(body.backendHost ?? existing.backendHost ?? '');
+  if (body.port !== undefined && !backendIsUrl) {
     const portError = validatePort(body.port);
     if (portError) {
       return res.status(400).json({ error: portError });
@@ -230,6 +246,7 @@ router.put('/:name', async (req, res) => {
     performance: { ...existing.performance, ...updates.performance },
     security: { ...existing.security, ...updates.security },
     advanced: { ...existing.advanced, ...updates.advanced },
+    wildcard: updates.wildcard ?? existing.wildcard ?? false,
     updatedAt: new Date().toISOString(),
   };
 
@@ -272,11 +289,13 @@ router.put('/:name', async (req, res) => {
 
 router.delete('/:name', async (req, res) => {
   const { name } = req.params;
+  const deleteCert = req.query.deleteCert === 'true';
   const domain = findDomain(name);
   if (!domain) {
     return res.status(404).json({ error: `Domain not found: ${name}` });
   }
 
+  // Delete nginx conf file
   if (domain.configFile) {
     try {
       await fs.unlink(domain.configFile);
@@ -287,10 +306,84 @@ router.delete('/:name', async (req, res) => {
     }
   }
 
+  // Optionally delete the SSL certificate directory for this domain
+  if (deleteCert && domain.ssl?.enabled) {
+    const { sslDir } = loadConfig();
+    const certDir = path.join(sslDir, name);
+    try {
+      await fs.rm(certDir, { recursive: true, force: true });
+    } catch { /* ignore — cert dir may not exist */ }
+  }
+
   const domains = getDomains().filter((d) => d.name !== name);
   saveDomains(domains);
 
-  res.json({ message: `Domain deleted: ${name}` });
+  res.json({ deleted: name, certDeleted: deleteCert && domain.ssl?.enabled });
+});
+
+// ─── PUT /api/domains/:name/toggle ───────────────────────────────────────────
+
+router.put('/:name/toggle', async (req, res) => {
+  const { name } = req.params;
+  const domain = findDomain(name);
+  if (!domain) {
+    return res.status(404).json({ error: `Domain not found: ${name}` });
+  }
+
+  const { nginxDir } = loadConfig();
+  const isEnabled = domain.enabled !== false;
+  const confPath = domain.configFile;
+
+  if (!confPath) {
+    return res.status(400).json({ error: 'Domain has no config file path stored' });
+  }
+
+  // Normalise paths regardless of current stored extension
+  const basePath = confPath.replace(/\.disabled$/, '');
+  const enabledPath = basePath;
+  const disabledPath = `${basePath}.disabled`;
+
+  if (isEnabled) {
+    // Disable: rename .conf → .conf.disabled, then reload nginx
+    try {
+      await fs.rename(enabledPath, disabledPath);
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to rename config file', details: err.message });
+    }
+
+    const domains = getDomains();
+    const idx = domains.findIndex(d => d.name === name);
+    domains[idx] = { ...domain, enabled: false, configFile: disabledPath, updatedAt: new Date().toISOString() };
+    saveDomains(domains);
+
+    // Reload so nginx stops serving this domain
+    await run(nginxReloadCmd(nginxDir), { cwd: nginxDir });
+
+    return res.json({ enabled: false });
+  } else {
+    // Enable: rename .conf.disabled → .conf, test, reload
+    try {
+      await fs.rename(disabledPath, enabledPath);
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to rename config file', details: err.message });
+    }
+
+    const testResult = await run(nginxTestCmd(nginxDir), { cwd: nginxDir });
+    if (!testResult.success) {
+      // Roll back rename
+      await fs.rename(enabledPath, disabledPath).catch(() => {});
+      return res.status(500).json({ error: 'nginx config test failed', output: testResult.stderr || testResult.stdout });
+    }
+
+    const domains = getDomains();
+    const idx = domains.findIndex(d => d.name === name);
+    domains[idx] = { ...domain, enabled: true, configFile: enabledPath, updatedAt: new Date().toISOString() };
+    saveDomains(domains);
+
+    await run(nginxReloadCmd(nginxDir), { cwd: nginxDir });
+
+    return res.json({ enabled: true });
+  }
 });
 
 // ─── POST /api/domains/:name/reload ──────────────────────────────────────────

@@ -1,7 +1,8 @@
 import express from 'express';
-import { run } from '../../core/shell.js';
 import { listAllCerts } from '../lib/cert-reader.js';
-import { issueCert } from '../../cli/managers/ssl-manager.js';
+import { issueCert, renewCert } from '../../cli/managers/ssl-manager.js';
+import { loadConfig } from '../../core/config.js';
+import { promises as dns } from 'dns';
 
 const router = express.Router();
 
@@ -21,50 +22,6 @@ setInterval(() => {
   }
 }, 60000);
 
-const CERTBOT_WIN_EXE = 'C:\\Program Files\\Certbot\\bin\\certbot.exe';
-
-// Returns the PS-safe certbot invocation string, or null if not installed.
-async function getCertbotCmd() {
-  if (process.platform !== 'win32') {
-    const r = await run('certbot --version', { timeout: 10000 });
-    return r.success ? 'certbot' : null;
-  }
-
-  // Try PATH first
-  const whereResult = await run('where.exe certbot', { timeout: 5000 });
-  if (whereResult.success && whereResult.stdout.trim()) return 'certbot';
-
-  // Check known Windows install location
-  const testResult = await run(`Test-Path "${CERTBOT_WIN_EXE}"`, { timeout: 5000 });
-  if (testResult.stdout.trim() === 'True') return `& "${CERTBOT_WIN_EXE}"`;
-
-  return null;
-}
-
-async function renewDomain(domain, certbotCmd) {
-  if (process.platform === 'win32') {
-    const certResult = await run(
-      `${certbotCmd} certonly --standalone --non-interactive --agree-tos -d ${domain}`,
-      { timeout: 120000 }
-    );
-    const output = [certResult.stdout, certResult.stderr].filter(Boolean).join('\n').trim();
-    return { success: certResult.success, output };
-  }
-
-  await run('systemctl stop nginx', { timeout: 15000 });
-  let certResult;
-  try {
-    certResult = await run(
-      `${certbotCmd} certonly --standalone --non-interactive --agree-tos -d ${domain}`,
-      { timeout: 120000 }
-    );
-  } finally {
-    await run('systemctl start nginx', { timeout: 15000 });
-  }
-  const output = [certResult.stdout, certResult.stderr].filter(Boolean).join('\n').trim();
-  return { success: certResult.success, output };
-}
-
 // ─── POST /api/ssl/create ─────────────────────────────────────────────────────
 
 router.post('/create', async (req, res) => {
@@ -75,11 +32,11 @@ router.post('/create', async (req, res) => {
   }
 
   const domainKey = domain.trim();
+  const config = loadConfig();
+  const acmeEmail = email || config.acmeEmail;
 
   if (validationMethod === 'dns') {
     // Two-phase flow: spawn ACME process, wait for TXT record, respond 202, pause until confirm.
-    // On Windows, wacs.exe runs interactively (stdin inherited), so onDnsChallenge is never
-    // called — issueCert() completes synchronously and we respond directly below.
     let confirmResolve, confirmReject;
     const confirmPromise = new Promise((resolve, reject) => {
       confirmResolve = resolve;
@@ -89,8 +46,7 @@ router.post('/create', async (req, res) => {
     let resultResolve;
     const resultPromise = new Promise((resolve) => { resultResolve = resolve; });
 
-    // Track whether a response has already been sent (202 from onDnsChallenge, or direct
-    // 200/500 if issueCert() completes without calling onDnsChallenge, e.g. on Windows).
+    // Track whether a response has already been sent (202 from onDnsChallenge)
     let responseSent = false;
 
     const onDnsChallenge = async (txtName, txtValue) => {
@@ -117,9 +73,7 @@ router.post('/create', async (req, res) => {
     };
 
     // Run issueCert in the background — it will call onDnsChallenge which sends 202 and pauses.
-    // If issueCert() completes without calling onDnsChallenge (e.g. Windows interactive mode or
-    // early error), we send the response directly.
-    issueCert(domainKey, { www: !!www, validationMethod: 'dns', email: email || null, onDnsChallenge })
+    issueCert(domainKey, { www: !!www, validationMethod: 'dns', email: acmeEmail, onDnsChallenge })
       .then(result => {
         resultResolve(result);
         pendingDnsChallenges.delete(domainKey);
@@ -129,8 +83,8 @@ router.post('/create', async (req, res) => {
             return res.json({ success: true, certPath: result.certPath, keyPath: result.keyPath });
           }
           const { step } = result.error ?? {};
-          if (step === 'ACME client detection') {
-            return res.status(503).json({ error: 'no_acme_client', hint: 'Install certbot or win-acme first using the SSL Manager.' });
+          if (step === 'email configuration') {
+            return res.status(400).json({ error: 'email_required', hint: 'Configure acmeEmail in settings or provide email parameter.' });
           }
           return res.status(500).json({ success: false, error: result.error });
         }
@@ -161,17 +115,17 @@ router.post('/create', async (req, res) => {
   }
 
   // HTTP validation path (synchronous — responds when complete)
-  const result = await issueCert(domainKey, { www: !!www, validationMethod: 'http', email: email || null });
+  const result = await issueCert(domainKey, { www: !!www, validationMethod: 'http', email: acmeEmail });
 
   if (result.success) {
     return res.json({ success: true, certPath: result.certPath, keyPath: result.keyPath });
   }
 
   const { step } = result.error;
-  if (step === 'ACME client detection') {
-    return res.status(503).json({
-      error: 'no_acme_client',
-      hint: 'Install certbot or win-acme first using the SSL Manager.',
+  if (step === 'email configuration') {
+    return res.status(400).json({
+      error: 'email_required',
+      hint: 'Configure acmeEmail in settings or provide email parameter.',
     });
   }
   if (step === 'port 80 check') {
@@ -198,8 +152,28 @@ router.post('/create-confirm', async (req, res) => {
     });
   }
 
-  // Signal issueCert() to write '\n' to the ACME process stdin and continue
-  state.confirmDeferred.resolve();
+  try {
+    const records = await dns.resolveTxt(`_acme-challenge.${domainKey}`);
+    const flatRecords = records.flat();
+
+    const found = flatRecords.includes(state.txtValue);
+    if (!found) {
+      return res.status(400).json({
+        error: 'dns_not_propagated',
+        hint: 'The expected TXT record value was not found. Make sure you added the correct TXT record and wait a few minutes for DNS propagation.',
+        expected: state.txtValue,
+        found: flatRecords,
+      });
+    }
+  } catch (err) {
+    return res.status(400).json({
+      error: 'dns_lookup_failed',
+      hint: 'Failed to lookup the expected TXT record. Make sure you added the correct TXT record.',
+      detail: err.message,
+    });
+  }
+  // Signal issueCert() to continue with the ACME process
+  await state.confirmDeferred.resolve();
 
   // Wait for the ACME process to complete
   const result = await state.resultPromise;
@@ -225,7 +199,7 @@ router.post('/create-cancel', async (req, res) => {
     });
   }
 
-  // Reject the deferred — issueCert() will kill the proc and return a failure result
+  // Reject the deferred — issueCert() will return a failure result
   state.confirmDeferred.reject(new Error('cancelled by user'));
   pendingDnsChallenges.delete(domainKey);
 
@@ -235,56 +209,72 @@ router.post('/create-cancel', async (req, res) => {
 // ─── GET /api/ssl ─────────────────────────────────────────────────────────────
 
 router.get('/', async (req, res) => {
-  const certbotCmd = await getCertbotCmd();
-  if (!certbotCmd) {
-    return res.status(503).json({
-      error: 'certbot not installed',
-      instructions: 'Install certbot: https://certbot.eff.org/instructions',
-    });
-  }
   const certs = await listAllCerts();
   res.json(certs);
 });
 
+// ─── POST /api/ssl/renew/:domain ─────────────────────────────────────────────
+
 router.post('/renew/:domain', async (req, res) => {
-  const certbotCmd = await getCertbotCmd();
-  if (!certbotCmd) {
-    return res.status(503).json({
-      error: 'certbot not installed',
-      instructions: 'Install certbot: https://certbot.eff.org/instructions',
+  const domain = req.params.domain;
+  const config = loadConfig();
+
+  if (!config.acmeEmail) {
+    return res.status(400).json({
+      error: 'email_required',
+      hint: 'Configure acmeEmail in settings first.',
     });
   }
-  const domain = req.params.domain;
+
   const certs = await listAllCerts();
   const found = certs.find(cert => cert.domain === domain);
   if (!found) {
-    return res.status(404).json({ error: `Domain '${domain}' not found in certbot` });
+    return res.status(404).json({ error: `Domain '${domain}' not found` });
   }
-  const result = await renewDomain(domain, certbotCmd);
-  if (result.output.includes('binding to port 80') || result.output.includes('Address already in use')) {
+
+  const result = await renewCert(domain, { validationMethod: 'http', email: config.acmeEmail });
+
+  if (result.success) {
+    return res.json({ success: true, certPath: result.certPath, keyPath: result.keyPath });
+  }
+
+  const { step } = result.error;
+  if (step === 'port 80 check') {
     return res.status(409).json({
-      error: 'Port 80 is busy',
-      message: 'stop nginx first or use --webroot',
+      error: 'port_busy',
+      detail: result.error.cause,
+      hint: 'Stop the process using port 80 and try again.',
     });
   }
-  res.json({ success: result.success, output: result.output });
+  return res.status(500).json({ success: false, error: result.error });
 });
 
+// ─── POST /api/ssl/renew-all ─────────────────────────────────────────────────
+
 router.post('/renew-all', async (req, res) => {
-  const certbotCmd = await getCertbotCmd();
-  if (!certbotCmd) {
-    return res.status(503).json({
-      error: 'certbot not installed',
-      instructions: 'Install certbot: https://certbot.eff.org/instructions',
+  const config = loadConfig();
+
+  if (!config.acmeEmail) {
+    return res.status(400).json({
+      error: 'email_required',
+      hint: 'Configure acmeEmail in settings first.',
     });
   }
+
   const certs = await listAllCerts();
   const expiring = certs.filter(c => c.daysLeft !== null && c.daysLeft < 30);
   const results = [];
+
   for (const cert of expiring) {
-    const r = await renewDomain(cert.domain, certbotCmd);
-    results.push({ domain: cert.domain, success: r.success, output: r.output });
+    const result = await renewCert(cert.domain, { validationMethod: 'http', email: config.acmeEmail });
+    results.push({
+      domain: cert.domain,
+      success: result.success,
+      certPath: result.certPath,
+      keyPath: result.keyPath,
+    });
   }
+
   res.json(results);
 });
 

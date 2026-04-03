@@ -1,37 +1,68 @@
 <!-- Settings Page -->
-<div v-show="page === 'settings'" class="max-w-2xl mx-auto">
-  <h2 class="text-2xl font-bold mb-2">Settings</h2>
-  <p class="text-slate-400 mb-8">Dashboard configuration and service paths</p>
+<div v-show="page === 'settings'" class="w-full max-w-4xl pb-12">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h2 class="text-2xl font-bold tracking-tight text-foreground">Settings</h2>
+<p class="text-muted font-medium text-sm mt-1">Dashboard configuration and service paths</p>
+</div>
+</div>
 
-  <div class="card p-6 space-y-6">
-    <div class="input-group">
-      <input v-model.number="settings.dashboardPort" type="number" placeholder=" " />
-      <label>Dashboard Port</label>
-      <p class="text-xs text-slate-500 mt-1 ml-1">Restart dashboard after changing</p>
-    </div>
+<div class="stat-card overflow-hidden relative">
+<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
+<div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5">
+<h3 class="form-label !mb-0 font-bold">Application configuration</h3>
+</div>
 
-    <div class="input-group">
-      <input v-model="settings.nginxDir" placeholder=" " />
-      <label>Nginx Directory</label>
-    </div>
+<div class="p-8 space-y-10 bg-background">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
 
-    <div class="input-group">
-      <input v-model="settings.certbotDir" placeholder=" " />
-      <label>Certbot Directory</label>
-    </div>
+<div class="w-full">
+<label class="form-label">Dashboard Port</label>
+<input v-model.number="settings.dashboardPort" type="number" class="form-input" placeholder="3000" />
+<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Restart dashboard after changing</p>
+</div>
 
-    <div class="input-group">
-      <input v-model="settings.password" type="password" placeholder=" " />
-      <label>New Password</label>
-      <p class="text-xs text-slate-500 mt-1 ml-1">Leave blank to keep current</p>
-    </div>
+<div class="w-full">
+<label class="form-label">ACME Email (Let's Encrypt)</label>
+<input v-model="settings.acmeEmail" type="email" class="form-input" placeholder="admin@example.com" />
+<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Required for certificate issuance</p>
+</div>
 
-    <div class="flex items-center gap-4 pt-2">
-      <button @click="saveSettings" :disabled="settings.loading" class="btn btn-primary">
-        {{ settings.loading ? 'Saving...' : 'Save Settings' }}
-      </button>
-      <span v-if="settings.msg" class="text-brand-400 text-sm">{{ settings.msg }}</span>
-      <span v-if="settings.error" class="text-red-400 text-sm">{{ settings.error }}</span>
-    </div>
-  </div>
+<div class="w-full">
+<label class="form-label">Nginx Directory</label>
+<input v-model="settings.nginxDir" class="form-input font-mono text-[13px]" placeholder="/etc/nginx" />
+<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Where nginx.conf is located</p>
+</div>
+
+<div class="w-full">
+<label class="form-label">SSL Settings Directory</label>
+<input v-model="settings.sslDir" class="form-input font-mono text-[13px]" placeholder="/etc/nginx/ssl" />
+<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Directory for default SSL certs</p>
+</div>
+
+</div>
+
+<div class="border-t border-border/50 pt-10">
+<div class="w-full max-w-md">
+<label class="form-label">New Password</label>
+<input v-model="settings.password" type="password" class="form-input" placeholder="Leave blank to keep current" />
+</div>
+</div>
+
+</div>
+
+<!-- Actions area -->
+<div class="p-5 border-t border-border bg-black/5 dark:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<button @click="saveSettings" :disabled="settings.loading" class="btn btn-primary min-w-[140px] shadow-sm">
+<svg v-if="settings.loading" class="w-4 h-4 animate-spin -ml-1 mr-2 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+{{ settings.loading ? 'Saving...' : 'Save Settings' }}
+</button>
+</div>
+<div>
+<span v-if="settings.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ settings.msg }}</span>
+<span v-if="settings.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ settings.error }}</span>
+</div>
+</div>
+</div>
 </div>

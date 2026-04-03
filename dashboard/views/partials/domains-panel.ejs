@@ -1,66 +1,104 @@
 <!-- Domains List Page -->
-<div v-show="page === 'domains'" class="max-w-6xl mx-auto">
-  <div class="flex items-center justify-between mb-2">
-    <h2 class="text-2xl font-bold">Domains</h2>
-    <button @click="toggleDomainForm()" class="btn btn-primary">
-      <svg v-if="!domains.showForm" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-      </svg>
-      {{ domains.showForm ? 'Cancel' : 'Add Domain' }}
-    </button>
-  </div>
-  <p class="text-slate-400 mb-8">Nginx reverse proxy configurations</p>
+<div v-show="page === 'domains'" class="w-full">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h2 class="text-2xl font-bold tracking-tight text-foreground">Domains</h2>
+<p class="text-muted font-medium text-sm mt-1">Nginx reverse proxy configurations</p>
+</div>
+<button @click="toggleDomainForm()" class="btn btn-primary">
+<svg v-if="!domains.showForm" class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+{{ domains.showForm ? 'Cancel' : 'Add Domain' }}
+</button>
+</div>
 
-  <!-- Domain Form (included from domain-form.ejs) -->
-  <%- include('domain-form.ejs') %>
+<!-- Domain Form Modal / Drawer Equivalent -->
+<%- include('domain-form.ejs') %>
 
-  <!-- Domain List -->
-  <div v-if="domains.loading" class="text-slate-500">Loading...</div>
-  <div v-else-if="domains.list.length === 0" class="card p-12 text-center">
-    <p class="text-slate-500">No domains configured. Click "Add Domain" to get started.</p>
-  </div>
-  <div v-else class="card overflow-hidden">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Domain</th>
-          <th>Port</th>
-          <th>Type</th>
-          <th>SSL</th>
-          <th>Cert</th>
-          <th class="text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="d in domains.list" :key="d.name">
-          <td class="font-mono font-medium">{{ d.name }}</td>
-          <td class="font-mono text-slate-400">:{{ d.port }}</td>
-          <td><span class="badge badge-neutral">{{ (d.upstreamType || 'http').toUpperCase() }}</span></td>
-          <td>
-            <span :class="d.ssl?.enabled ? 'badge badge-success' : 'badge badge-neutral'">
-              {{ d.ssl?.enabled ? 'HTTPS' : 'HTTP' }}
-            </span>
-          </td>
-          <td class="font-mono text-slate-400">
-            {{ d.daysLeft != null ? d.daysLeft + 'd' : '—' }}
-          </td>
-          <td class="text-right">
-            <div class="flex justify-end gap-2">
-              <button @click="editDomain(d.name)" class="btn btn-secondary btn-sm">Edit</button>
-              <button @click="reloadDomain(d.name)" class="btn btn-secondary btn-sm btn-icon" title="Reload">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-              <button @click="deleteDomain(d.name)" class="btn btn-danger btn-sm btn-icon" title="Delete">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+<!-- Data Display -->
+<div v-if="domains.loading" class="text-muted text-sm flex items-center gap-2">
+<!-- Skeleton loader instead of spinner -->
+<div class="w-full flex flex-col gap-2">
+<div class="h-16 w-full animate-pulse-fx stat-card"></div>
+<div class="h-16 w-full animate-pulse-fx stat-card"></div>
+<div class="h-16 w-full animate-pulse-fx stat-card"></div>
+</div>
+</div>
+
+<div v-else-if="domains.list.length === 0" class="stat-card p-16 text-center relative overflow-hidden">
+<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
+<div class="flex justify-center mb-4">
+<div class="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-lg" style="background: rgba(var(--color-primary-rgb), 0.1); color: var(--color-primary);">
+<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+</div>
+</div>
+<h3 class="text-lg font-semibold text-foreground">No Domains Yet</h3>
+<p class="text-muted text-sm mt-2 max-w-sm mx-auto">Get started by adding your first domain structure to the proxy.</p>
+<button @click="toggleDomainForm()" class="btn btn-primary mt-6">Add Domain</button>
+</div>
+
+<div v-else class="stat-card overflow-hidden flex flex-col">
+<!-- Headers pseudo-row -->
+<div class="flex items-center px-6 py-3 border-b border-border bg-black/5 dark:bg-white/5">
+<div class="w-8 shrink-0"></div> <!-- for status dot -->
+<div class="flex-1 form-label !mb-0 text-left">Domain / Target</div>
+<div class="w-48 form-label !mb-0 text-left">Tags</div>
+<div class="w-32 form-label !mb-0 text-right pr-2">Actions</div>
+</div>
+
+<!-- Domain List Rows -->
+<div v-for="d in domains.list" :key="d.name" class="domain-row group" :class="d.enabled === false ? 'opacity-50 grayscale' : ''">
+<!-- Status Dot -->
+<div class="w-8 shrink-0 flex items-center justify-center -ml-1">
+<div class="status-dot" :class="d.enabled === false ? 'inactive' : 'active'"></div>
+</div>
+
+<!-- Domain & Backend -->
+<div class="flex-1 min-w-0 pr-4">
+<div class="font-mono text-[14px] font-semibold text-foreground truncate flex items-center gap-2">
+{{ d.name }}
+<span v-if="d.www" class="badge badge-neutral">www</span>
+</div>
+<div class="font-mono text-[11px] text-muted mt-1 truncate">
+<svg class="inline-block w-3 h-3 mr-1 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+<span v-if="/^https?:\/\//i.test(d.backendHost || '')">{{ d.backendHost }}</span>
+<span v-else>{{ d.upstreamType || 'http' }}://{{ d.backendHost || '127.0.0.1' }}:{{ d.port }}</span>
+</div>
+</div>
+
+<!-- Badges Stack -->
+<div class="w-48 flex items-center flex-wrap gap-1.5 shrink-0">
+<!-- Wildcard Badge -->
+<span v-if="d.wildcard" class="badge badge-purple">Wildcard</span>
+
+<!-- SSL Badge -->
+<span v-if="d.ssl?.enabled" class="badge"
+:class="d.daysLeft > 30 ? 'badge-success' : (d.daysLeft >= 10 ? 'badge-warning' : 'badge-danger')">
+SSL: {{ d.daysLeft != null ? d.daysLeft + 'd' : 'Wait' }}
+</span>
+<span v-else class="badge badge-neutral">HTTP Only</span>
+</div>
+
+<!-- Actions (appear on hover via .domain-actions in CSS) -->
+<div class="w-32 flex justify-end gap-1.5 shrink-0 domain-actions">
+<!-- Toggle button -->
+<button @click="toggleDomain(d.name)" class="btn btn-secondary btn-icon text-muted hover:text-foreground" :title="d.enabled === false ? 'Enable' : 'Disable'">
+<svg v-if="d.enabled === false" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+<svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+</button>
+<!-- Reload button -->
+<button @click="reloadDomain(d.name)" class="btn btn-secondary btn-icon text-muted hover:text-foreground" title="Reload Nginx config for this domain">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+</button>
+<!-- Edit button -->
+<button @click="editDomain(d.name)" class="btn btn-secondary btn-icon text-muted hover:text-primary" title="Edit Domain">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+</button>
+<!-- Delete button -->
+<button @click="deleteDomain(d.name)" class="btn btn-danger btn-icon text-muted" title="Delete Domain">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+</button>
+</div>
+
+</div>
+</div>
 </div>

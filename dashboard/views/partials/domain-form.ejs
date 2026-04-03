@@ -1,287 +1,333 @@
-<!-- Domain Form -->
-<div v-if="domains.showForm" class="card mb-6">
-  <div class="flex items-center justify-between p-4 border-b border-slate-800">
-    <h3 class="font-semibold">{{ domains.editingName ? 'Edit: ' + domains.editingName : 'New Domain' }}</h3>
-    <div class="flex gap-2">
-      <button @click="resetDomainForm()" class="btn btn-secondary btn-sm">Cancel</button>
-      <button @click="saveDomain()" :disabled="domains.saving" class="btn btn-primary btn-sm">
-        {{ domains.saving ? 'Saving...' : 'Save' }}
-      </button>
-    </div>
-  </div>
+<!-- Domain Form Modal Overlay -->
+<transition name="modal">
+<div v-if="domains.showForm" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 modal-overlay">
 
-  <p v-if="domains.error" class="mx-4 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-    {{ domains.error }}
-  </p>
+<!-- Modal Card -->
+<div class="relative w-full max-w-4xl max-h-full flex flex-col modal-card">
 
-  <!-- cert_missing 422 handler -->
-  <div v-if="domains.certMissing" class="mx-4 mt-4 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-    <p class="text-yellow-400 text-sm font-semibold mb-1">SSL certificate not found</p>
-    <p class="text-slate-400 text-xs mb-3 font-mono">{{ domains.certMissing.certPath }}</p>
-    <p class="text-slate-400 text-xs mb-4">{{ domains.certMissing.hint }}</p>
-
-    <!-- DNS waiting state — shown after 202 response -->
-    <div v-if="domains.certDnsWaiting" class="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-3">
-      <p class="text-amber-400 font-semibold">Add this DNS TXT record, then click Continue</p>
-      <div class="space-y-1 font-mono text-xs">
-        <p class="text-slate-300">Name:&nbsp; <span class="text-white">{{ domains.certDnsWaiting.txtName }}</span></p>
-        <p class="text-slate-300">Value: <span class="text-white">{{ domains.certDnsWaiting.txtValue }}</span></p>
-      </div>
-      <div class="flex gap-2">
-        <button @click="confirmCertDns()" :disabled="domains.certDnsConfirming" class="btn btn-primary btn-sm">
-          {{ domains.certDnsConfirming ? 'Verifying...' : "I\'ve added the TXT record, continue" }}
-        </button>
-        <button @click="cancelCertDns()" :disabled="domains.certDnsConfirming" class="btn btn-secondary btn-sm">Cancel</button>
-      </div>
-    </div>
-
-    <!-- Method selector + action buttons — hidden while DNS waiting -->
-    <div v-if="!domains.certDnsWaiting">
-      <!-- Structured error from a failed cert creation attempt -->
-      <div v-if="domains.certCreateError" class="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs space-y-1">
-        <p class="text-red-400 font-semibold">Certificate creation failed</p>
-        <p class="text-slate-400"><span class="text-slate-300">Step:</span> {{ domains.certCreateError.step }}</p>
-        <p class="text-slate-400"><span class="text-slate-300">Cause:</span> {{ domains.certCreateError.cause }}</p>
-        <p class="text-slate-400"><span class="text-slate-300">Consequence:</span> {{ domains.certCreateError.consequence }}</p>
-        <p class="text-slate-400"><span class="text-slate-300">nginx running:</span> {{ domains.certCreateError.nginxRunning ? 'yes' : 'no' }}</p>
-      </div>
-
-      <!-- Validation method selector -->
-      <div class="flex gap-4 mb-3">
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="radio" v-model="domains.certMethod" value="http" />
-          <span class="text-sm">HTTP challenge <span class="text-slate-500">(DNS points here)</span></span>
-        </label>
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="radio" v-model="domains.certMethod" value="dns" />
-          <span class="text-sm">DNS challenge <span class="text-slate-500">(add TXT record)</span></span>
-        </label>
-      </div>
-
-      <div class="flex gap-2">
-        <button @click="createCertAndRetry()" :disabled="domains.certCreating" class="btn btn-primary btn-sm">
-          {{ domains.certCreating ? 'Creating...' : 'Create Certificate' }}
-        </button>
-        <button @click="disableSslAndSave()" :disabled="domains.certCreating" class="btn btn-secondary btn-sm">
-          Disable SSL
-        </button>
-        <button @click="dismissCertMissing()" :disabled="domains.certCreating" class="btn btn-secondary btn-sm">
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Basic Section -->
-  <div class="border-b border-slate-800">
-    <div @click="toggleSection('basic')" class="section-header">
-      <span class="font-medium">Basic Configuration</span>
-      <svg class="w-5 h-5 text-slate-500 transition-transform" :class="{ 'rotate-180': sections.basic }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
-    <div v-show="sections.basic" class="p-4 grid grid-cols-2 gap-4">
-      <div class="input-group">
-        <input v-model="domains.form.name" :disabled="!!domains.editingName" placeholder=" " />
-        <label>Domain Name</label>
-        <p class="text-xs text-slate-500 mt-1 ml-1">e.g., api.example.com or *.example.com</p>
-      </div>
-      <div class="input-group">
-        <input v-model.number="domains.form.port" type="number" placeholder=" " />
-        <label>Backend Port</label>
-        <p class="text-xs text-slate-500 mt-1 ml-1">Port your app listens on</p>
-      </div>
-      <div class="input-group">
-        <input v-model="domains.form.backendHost" placeholder=" " />
-        <label>Backend Host</label>
-      </div>
-      <div class="input-group">
-        <select v-model="domains.form.upstreamType">
-          <option value="http">HTTP</option>
-          <option value="https">HTTPS</option>
-          <option value="ws">WebSocket</option>
-        </select>
-        <label>Upstream Type</label>
-      </div>
-      <div class="col-span-2 flex items-center gap-3 py-2">
-        <label class="switch">
-          <input type="checkbox" v-model="domains.form.www" />
-          <span class="slider"></span>
-        </label>
-        <span class="text-sm">Include www subdomain</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- SSL Section -->
-  <div class="border-b border-slate-800">
-    <div @click="toggleSection('ssl')" class="section-header">
-      <span class="font-medium">SSL Configuration</span>
-      <svg class="w-5 h-5 text-slate-500 transition-transform" :class="{ 'rotate-180': sections.ssl }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
-    <div v-show="sections.ssl" class="p-4 space-y-4">
-      <div class="flex items-center gap-3">
-        <label class="switch">
-          <input type="checkbox" v-model="domains.form.ssl.enabled" />
-          <span class="slider"></span>
-        </label>
-        <span class="text-sm">Enable SSL / HTTPS</span>
-      </div>
-
-      <div v-if="domains.form.ssl.enabled" class="grid grid-cols-2 gap-4 pl-14">
-        <div class="input-group">
-          <input v-model="domains.form.ssl.certPath" placeholder=" " class="font-mono text-xs" />
-          <label>Certificate Path</label>
-        </div>
-        <div class="input-group">
-          <input v-model="domains.form.ssl.keyPath" placeholder=" " class="font-mono text-xs" />
-          <label>Private Key Path</label>
-        </div>
-        <div class="col-span-2 flex items-center gap-3">
-          <label class="switch">
-            <input type="checkbox" v-model="domains.form.ssl.redirect" />
-            <span class="slider"></span>
-          </label>
-          <span class="text-sm">Redirect HTTP to HTTPS</span>
-        </div>
-        <div class="flex items-center gap-3">
-          <label class="switch">
-            <input type="checkbox" v-model="domains.form.ssl.hsts" />
-            <span class="slider"></span>
-          </label>
-          <span class="text-sm">Enable HSTS</span>
-        </div>
-        <div v-if="domains.form.ssl.hsts" class="input-group">
-          <input v-model.number="domains.form.ssl.hstsMaxAge" type="number" placeholder=" " />
-          <label>HSTS Max-Age (seconds)</label>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Performance Section -->
-  <div class="border-b border-slate-800">
-    <div @click="toggleSection('performance')" class="section-header">
-      <span class="font-medium">Performance</span>
-      <svg class="w-5 h-5 text-slate-500 transition-transform" :class="{ 'rotate-180': sections.performance }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
-    <div v-show="sections.performance" class="p-4 grid grid-cols-2 gap-4">
-      <div class="input-group">
-        <input v-model="domains.form.performance.maxBodySize" placeholder=" " />
-        <label>Max Body Size</label>
-        <p class="text-xs text-slate-500 mt-1 ml-1">e.g., 10m, 1g</p>
-      </div>
-      <div class="input-group">
-        <input v-model.number="domains.form.performance.readTimeout" type="number" placeholder=" " />
-        <label>Read Timeout (s)</label>
-      </div>
-      <div class="input-group">
-        <input v-model.number="domains.form.performance.connectTimeout" type="number" placeholder=" " />
-        <label>Connect Timeout (s)</label>
-      </div>
-      <div class="flex items-center gap-3">
-        <label class="switch">
-          <input type="checkbox" v-model="domains.form.performance.proxyBuffers" />
-          <span class="slider"></span>
-        </label>
-        <span class="text-sm">Proxy Buffering</span>
-      </div>
-      <div class="flex items-center gap-3">
-        <label class="switch">
-          <input type="checkbox" v-model="domains.form.performance.gzip" />
-          <span class="slider"></span>
-        </label>
-        <span class="text-sm">Gzip Compression</span>
-      </div>
-      <div v-if="domains.form.performance.gzip" class="input-group">
-        <input v-model="domains.form.performance.gzipTypes" placeholder=" " class="text-xs" />
-        <label>Gzip MIME Types</label>
-      </div>
-    </div>
-  </div>
-
-  <!-- Security Section -->
-  <div class="border-b border-slate-800">
-    <div @click="toggleSection('security')" class="section-header">
-      <span class="font-medium">Security</span>
-      <svg class="w-5 h-5 text-slate-500 transition-transform" :class="{ 'rotate-180': sections.security }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
-    <div v-show="sections.security" class="p-4 space-y-4">
-      <div class="flex items-center gap-3">
-        <label class="switch">
-          <input type="checkbox" v-model="domains.form.security.rateLimit" />
-          <span class="slider"></span>
-        </label>
-        <span class="text-sm">Rate Limiting</span>
-      </div>
-
-      <div v-if="domains.form.security.rateLimit" class="grid grid-cols-2 gap-4 pl-14">
-        <div class="input-group">
-          <input v-model.number="domains.form.security.rateLimitRate" type="number" placeholder=" " />
-          <label>Requests/second</label>
-        </div>
-        <div class="input-group">
-          <input v-model.number="domains.form.security.rateLimitBurst" type="number" placeholder=" " />
-          <label>Burst</label>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-3">
-        <label class="switch">
-          <input type="checkbox" v-model="domains.form.security.securityHeaders" />
-          <span class="slider"></span>
-        </label>
-        <span class="text-sm">Security Headers (X-Frame-Options, etc.)</span>
-      </div>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div class="flex items-center gap-3">
-          <label class="switch">
-            <input type="checkbox" v-model="domains.form.security.custom404" />
-            <span class="slider"></span>
-          </label>
-          <span class="text-sm">Custom 404 Page</span>
-        </div>
-        <div class="flex items-center gap-3">
-          <label class="switch">
-            <input type="checkbox" v-model="domains.form.security.custom50x" />
-            <span class="slider"></span>
-          </label>
-          <span class="text-sm">Custom 50x Page</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Advanced Section -->
-  <div>
-    <div @click="toggleSection('advanced')" class="section-header">
-      <span class="font-medium">Advanced</span>
-      <svg class="w-5 h-5 text-slate-500 transition-transform" :class="{ 'rotate-180': sections.advanced }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
-    <div v-show="sections.advanced" class="p-4 space-y-4">
-      <div class="flex items-center gap-3">
-        <label class="switch">
-          <input type="checkbox" v-model="domains.form.advanced.accessLog" />
-          <span class="slider"></span>
-        </label>
-        <span class="text-sm">Domain-specific Access Log</span>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-400 mb-2">Custom Location Blocks</label>
-        <textarea v-model="domains.form.advanced.customLocations" rows="4"
-          class="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          placeholder="location /api/v2 { ... }"></textarea>
-        <p class="text-xs text-slate-500 mt-1">Raw nginx location blocks (appended verbatim)</p>
-      </div>
-    </div>
-  </div>
+<!-- Modal Header -->
+<div class="flex items-center justify-between p-5 border-b border-border shrink-0" style="background: rgba(0,0,0,0.1)">
+<h3 class="font-bold text-[15px] text-foreground tracking-tight">
+{{ domains.editingName ? 'Edit: ' + domains.editingName : 'New Domain' }}
+</h3>
+<div class="flex gap-3">
+<button @click="resetDomainForm(); domains.showForm = false;" class="btn btn-secondary">Cancel</button>
+<button @click="saveDomain()" :disabled="domains.saving" class="btn btn-primary min-w-[80px]">
+{{ domains.saving ? 'Saving...' : 'Save' }}
+</button>
 </div>
+</div>
+
+<!-- Error Banners -->
+<div v-if="domains.error" class="shrink-0 p-4 border-b border-red-500/20 bg-red-500/5">
+<p class="text-red-500 text-sm font-semibold">{{ domains.error }}</p>
+</div>
+
+<!-- cert_missing 422 handler -->
+<div v-if="domains.certMissing" class="shrink-0 p-5 bg-amber-500/5 border-b border-amber-500/20">
+<p class="text-amber-500 text-sm font-bold mb-1">SSL certificate not found</p>
+<p class="text-muted text-xs mb-3 font-mono break-all">{{ domains.certMissing.certPath }}</p>
+<p class="text-muted text-[13px] mb-4">{{ domains.certMissing.hint }}</p>
+
+<!-- DNS waiting state -->
+<div v-if="domains.certDnsWaiting" class="p-4 stat-card text-sm space-y-3">
+<p class="text-amber-500 font-bold">Add this DNS TXT record, then click Continue</p>
+<div class="space-y-1 font-mono text-xs p-3 bg-black/5 dark:bg-white/5 border border-border rounded-[10px]">
+<p class="text-muted">Name:&nbsp; <span class="text-foreground">{{ domains.certDnsWaiting.txtName }}</span></p>
+<p class="text-muted">Value: <span class="text-foreground break-all select-all">{{ domains.certDnsWaiting.txtValue }}</span></p>
+</div>
+<div class="flex gap-2 pt-2">
+<button @click="confirmCertDns()" :disabled="domains.certDnsConfirming" class="btn btn-primary btn-sm">
+{{ domains.certDnsConfirming ? 'Verifying...' : "I've added the TXT record, continue" }}
+</button>
+<button @click="cancelCertDns()" :disabled="domains.certDnsConfirming" class="btn btn-secondary btn-sm">Cancel</button>
+</div>
+</div>
+
+<!-- Method selector -->
+<div v-if="!domains.certDnsWaiting">
+<div v-if="domains.certCreateError" class="mb-4 p-4 border border-red-500/20 rounded-[12px] shadow-sm bg-red-500/5 text-[13px] space-y-1.5">
+<p class="text-red-500 font-bold text-sm mb-1">Certificate creation failed</p>
+<p class="text-muted"><span class="form-label inline mr-2 text-[10px]">Step</span> {{ domains.certCreateError.step }}</p>
+<p class="text-muted"><span class="form-label inline mr-2 text-[10px]">Cause</span> {{ domains.certCreateError.cause }}</p>
+<p class="text-muted"><span class="form-label inline mr-2 text-[10px]">Note</span> {{ domains.certCreateError.consequence }}</p>
+<p class="text-muted"><span class="form-label inline mr-2 text-[10px]">Nginx</span> {{ domains.certCreateError.nginxRunning ? 'yes' : 'no' }}</p>
+</div>
+
+<div class="flex gap-6 mb-5 pt-2">
+<label v-if="!domains.form.wildcard" class="flex items-start gap-2 cursor-pointer group">
+<input type="radio" v-model="domains.certMethod" value="http" class="w-4 h-4 mt-0.5 text-primary border-border bg-transparent focus:ring-primary focus:ring-offset-background" />
+<div>
+<span class="text-[13px] font-bold text-foreground group-hover:text-primary transition-colors">HTTP challenge</span>
+<span class="text-muted font-medium block text-[11px] mt-0.5">DNS points here</span>
+</div>
+</label>
+<label class="flex items-start gap-2 cursor-pointer group">
+<input type="radio" v-model="domains.certMethod" value="dns" :disabled="domains.form.wildcard" class="w-4 h-4 mt-0.5 text-primary border-border bg-transparent focus:ring-primary focus:ring-offset-background disabled:opacity-50" />
+<div>
+<span class="text-[13px] font-bold text-foreground group-hover:text-primary transition-colors" :class="{'opacity-50': domains.form.wildcard && domains.certMethod !== 'dns'}">DNS challenge</span>
+<span class="text-muted font-medium block text-[11px] mt-0.5" :class="{'opacity-50': domains.form.wildcard && domains.certMethod !== 'dns'}">Add TXT record</span>
+</div>
+</label>
+</div>
+<p v-if="domains.form.wildcard" class="badge badge-warning mb-4">Wildcard requires DNS-01</p>
+
+<div class="flex gap-3">
+<button @click="createCertAndRetry()" :disabled="domains.certCreating" class="btn btn-primary btn-sm min-w-[120px]">
+{{ domains.certCreating ? 'Creating...' : 'Create Certificate' }}
+</button>
+<button @click="disableSslAndSave()" :disabled="domains.certCreating" class="btn btn-secondary btn-sm">Disable SSL</button>
+<button @click="dismissCertMissing()" :disabled="domains.certCreating" class="btn btn-danger btn-sm">Cancel</button>
+</div>
+</div>
+</div>
+
+<!-- Modal Body (Scrollable) -->
+<div class="flex-1 overflow-y-auto w-full flex flex-col pb-6 rounded-b-[20px] bg-transparent">
+
+<!-- Accordion Section: Basic -->
+<div class="border-b border-border">
+<div @click="toggleSection('basic')" class="flex items-center justify-between p-5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+<span class="form-label !mb-0 group-hover:text-foreground transition-colors">Basic Configuration</span>
+<svg class="w-4 h-4 text-muted transition-transform duration-200" :class="{ 'rotate-180': sections.basic }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+</div>
+<div v-show="sections.basic" class="p-6 pt-2 grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-border/50" style="background: rgba(0,0,0,0.1)">
+
+<div class="w-full md:col-span-2">
+<label class="form-label">Domain Name</label>
+<input type="text" v-model="domains.form.name" :disabled="!!domains.editingName" class="form-input" :class="{'opacity-50 cursor-not-allowed': !!domains.editingName}" placeholder="api.example.com" />
+<p v-if="domains.form.wildcard" class="text-[11px] text-amber-500 mt-1.5 font-bold">Enter bare domain only — <span class="font-mono">*.</span> prefix is added automatically.</p>
+</div>
+
+<div class="w-full md:col-span-2">
+<label class="form-label">Backend Host / URL</label>
+<input type="text" v-model="domains.form.backendHost" class="form-input" placeholder="127.0.0.1 or https://app.vercel.app" />
+</div>
+
+<div class="w-full" :class="{ 'opacity-40 pointer-events-none': /^https?:\/\//i.test(domains.form.backendHost) }">
+<label class="form-label">Backend Port</label>
+<input v-model.number="domains.form.port" type="number" class="form-input" placeholder="3000" />
+</div>
+
+<div class="w-full">
+<label class="form-label">Upstream Type</label>
+<select v-model="domains.form.upstreamType" class="form-input">
+<option value="http">HTTP</option>
+<option value="https">HTTPS</option>
+<option value="ws">WebSocket</option>
+</select>
+</div>
+
+<div class="flex items-center justify-between p-4 bg-black/10 dark:bg-black/20 border border-border w-full md:col-span-2 rounded-[12px]">
+<div>
+<div class="text-[13px] font-bold text-foreground">Wildcard Domain</div>
+<div class="text-[11px] text-muted mt-0.5 font-mono">*.example.com</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.wildcard" class="sr-only peer" />
+<div class="w-10 h-5 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<div v-if="domains.form.wildcard" class="md:col-span-2 p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[11px] font-bold rounded-[12px] shadow-sm">
+Wildcard SSL requires DNS-01 validation.
+</div>
+
+<div v-if="!domains.form.wildcard" class="flex items-center justify-between p-4 bg-black/10 dark:bg-black/20 border border-border w-full md:col-span-2 rounded-[12px]">
+<div>
+<div class="text-[13px] font-bold text-foreground">Include www subdomain</div>
+<div class="text-[11px] text-muted mt-0.5 font-medium">Redirects www.domain to bare domain</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.www" class="sr-only peer" />
+<div class="w-10 h-5 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+
+</div>
+</div>
+
+<!-- Accordion Section: SSL -->
+<div class="border-b border-border">
+<div @click="toggleSection('ssl')" class="flex items-center justify-between p-5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+<span class="form-label !mb-0 group-hover:text-foreground transition-colors">SSL Configuration</span>
+<svg class="w-4 h-4 text-muted transition-transform duration-200" :class="{ 'rotate-180': sections.ssl }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+</div>
+<div v-show="sections.ssl" class="p-6 pt-4 grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-border/50" style="background: rgba(0,0,0,0.1)">
+
+<div class="flex items-center justify-between p-4 bg-black/10 dark:bg-black/20 border border-border w-full md:col-span-2 rounded-[12px]">
+<div>
+<div class="text-[13px] font-bold text-foreground">Enable SSL / HTTPS</div>
+<div class="text-[11px] text-muted mt-0.5 font-medium">Auto-generates certificates if left blank</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.ssl.enabled" class="sr-only peer" />
+<div class="w-10 h-5 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+
+<template v-if="domains.form.ssl.enabled">
+<div class="w-full">
+<label class="form-label">Certificate Path</label>
+<input type="text" v-model="domains.form.ssl.certPath" class="form-input font-mono text-xs" />
+</div>
+<div class="w-full">
+<label class="form-label">Private Key Path</label>
+<input type="text" v-model="domains.form.ssl.keyPath" class="form-input font-mono text-xs" />
+</div>
+
+<div class="flex items-center gap-4 py-2 w-full md:col-span-2">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.ssl.redirect" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold">Redirect HTTP to HTTPS</span>
+</div>
+
+<div class="flex items-center gap-4 py-1 w-full md:col-span-2">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.ssl.hsts" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold">Enable HSTS</span>
+</div>
+
+<div v-if="domains.form.ssl.hsts" class="w-full pl-6 md:col-span-2">
+<label class="form-label">HSTS Max-Age (seconds)</label>
+<input v-model.number="domains.form.ssl.hstsMaxAge" type="number" class="form-input w-48" />
+</div>
+</template>
+
+</div>
+</div>
+
+<!-- Accordion Section: Performance -->
+<div class="border-b border-border">
+<div @click="toggleSection('performance')" class="flex items-center justify-between p-5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+<span class="form-label !mb-0 group-hover:text-foreground transition-colors">Performance</span>
+<svg class="w-4 h-4 text-muted transition-transform duration-200" :class="{ 'rotate-180': sections.performance }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+</div>
+<div v-show="sections.performance" class="p-6 pt-4 grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-border/50" style="background: rgba(0,0,0,0.1)">
+
+<div class="w-full">
+<label class="form-label">Max Body Size</label>
+<input type="text" v-model="domains.form.performance.maxBodySize" class="form-input" placeholder="10m, 1g" />
+</div>
+<div class="w-full">
+<label class="form-label">Read Timeout (s)</label>
+<input v-model.number="domains.form.performance.readTimeout" type="number" class="form-input" />
+</div>
+<div class="w-full">
+<label class="form-label">Connect Timeout (s)</label>
+<input v-model.number="domains.form.performance.connectTimeout" type="number" class="form-input" />
+</div>
+
+<div class="flex items-center gap-4 py-2 w-full md:col-span-3">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.performance.proxyBuffers" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold">Proxy Buffering</span>
+</div>
+
+<div class="flex items-center gap-4 py-2 w-full md:col-span-3">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.performance.gzip" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold">Gzip Compression</span>
+</div>
+
+<div v-if="domains.form.performance.gzip" class="w-full md:col-span-3 pl-6">
+<label class="form-label">Gzip MIME Types</label>
+<input type="text" v-model="domains.form.performance.gzipTypes" class="form-input font-mono text-[11px] w-full" />
+</div>
+
+</div>
+</div>
+
+<!-- Accordion Section: Security -->
+<div class="border-b border-border">
+<div @click="toggleSection('security')" class="flex items-center justify-between p-5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+<span class="form-label !mb-0 group-hover:text-foreground transition-colors">Security</span>
+<svg class="w-4 h-4 text-muted transition-transform duration-200" :class="{ 'rotate-180': sections.security }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+</div>
+<div v-show="sections.security" class="p-6 pt-4 space-y-5 border-t border-border/50" style="background: rgba(0,0,0,0.1)">
+
+<div class="flex items-center gap-4 max-w-full">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.security.rateLimit" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold text-foreground">Rate Limiting</span>
+</div>
+
+<div v-if="domains.form.security.rateLimit" class="grid grid-cols-2 gap-6 pl-10 border-l border-border ml-2">
+<div class="w-full">
+<label class="form-label">Requests / Sec</label>
+<input v-model.number="domains.form.security.rateLimitRate" type="number" class="form-input" />
+</div>
+<div class="w-full">
+<label class="form-label">Burst</label>
+<input v-model.number="domains.form.security.rateLimitBurst" type="number" class="form-input" />
+</div>
+</div>
+
+<div class="flex items-center gap-4">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.security.securityHeaders" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold text-foreground">Security Headers <span class="text-muted font-medium">(X-Frame-Options, X-XSS-Protection)</span></span>
+</div>
+
+<div class="flex flex-col sm:flex-row gap-6 pt-2">
+<div class="flex items-center gap-3">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.security.custom404" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold">Custom 404 Form</span>
+</div>
+<div class="flex items-center gap-3">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.security.custom50x" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold">Custom 50x Page</span>
+</div>
+</div>
+
+</div>
+</div>
+
+<!-- Accordion Section: Advanced -->
+<div>
+<div @click="toggleSection('advanced')" class="flex items-center justify-between p-5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+<span class="form-label !mb-0 group-hover:text-foreground transition-colors">Advanced</span>
+<svg class="w-4 h-4 text-muted transition-transform duration-200" :class="{ 'rotate-180': sections.advanced }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+</div>
+<div v-show="sections.advanced" class="p-6 pt-4 space-y-6 border-t border-border/50" style="background: rgba(0,0,0,0.1)">
+
+<div class="flex items-center gap-4">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.advanced.accessLog" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold">Domain-specific Access Log</span>
+</div>
+
+<div class="w-full">
+<label class="form-label">Custom Location Blocks</label>
+<textarea v-model="domains.form.advanced.customLocations" rows="6"
+class="form-input font-mono text-[13px] leading-relaxed resize-y"
+placeholder="location /api/v2 {&#10; proxy_pass http://localhost:8080;&#10;}"></textarea>
+<p class="text-[11px] font-bold text-muted mt-2">Raw nginx location blocks (appended verbatim inside the server block)</p>
+</div>
+
+</div>
+</div>
+
+</div>
+</div>
+</div>
+</transition>

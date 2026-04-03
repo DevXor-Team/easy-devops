@@ -1,45 +1,99 @@
 <!-- Sidebar Navigation -->
-<aside class="w-60 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col">
-  <div class="p-5 border-b border-slate-800">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center">
-        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      </div>
-      <div>
-        <h1 class="font-bold text-white">Easy DevOps</h1>
-        <p class="text-xs text-slate-500">v0.1.0</p>
-      </div>
+<aside class="sidebar-wrapper flex-shrink-0 flex flex-col border-r border-border relative z-20 h-screen"
+  :class="sidebarCollapsed ? 'w-16' : 'w-60'">
+
+  <!-- Logo section -->
+  <div class="h-16 border-b border-border flex items-center shrink-0 overflow-hidden"
+    :class="sidebarCollapsed ? 'justify-center px-0' : 'px-5 gap-3'">
+    <div class="w-8 h-8 rounded-[10px] shrink-0 flex items-center justify-center shadow-sm"
+      style="background: linear-gradient(135deg, var(--color-primary) 0%, rgba(var(--color-primary-rgb), 0.7) 100%); box-shadow: 0 2px 8px rgba(var(--color-primary-rgb), 0.3);">
+      <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    </div>
+    <div class="whitespace-nowrap transition-opacity duration-300"
+      :class="sidebarCollapsed ? 'opacity-0 w-0' : 'opacity-100'">
+      <h1 class="font-bold text-foreground text-sm tracking-wide">Easy DevOps</h1>
     </div>
   </div>
 
-  <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
+  <!-- Navigation items -->
+  <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden flex flex-col gap-1 px-3">
+    <!-- Main Menu Label -->
+    <div v-show="!sidebarCollapsed" class="px-2 mb-2 mt-2">
+      <span class="text-[10px] uppercase tracking-widest text-muted font-bold">Main Menu</span>
+    </div>
+
     <button v-for="item in navItems" :key="item.id" @click="navigateTo(item.id)"
-      :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
-        page === item.id
-          ? 'bg-brand-500/10 text-brand-400'
-          : 'text-slate-400 hover:text-white hover:bg-slate-800']">
-      <span v-html="item.icon"></span>
-      {{ item.label }}
+      class="group flex items-center rounded-[10px] font-medium transition-all duration-200 relative outline-none border border-transparent"
+      :class="[
+        page === item.id ? 'sidebar-active-item text-primary' : 'text-muted hover:bg-surface hover:text-foreground',
+        sidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'w-full px-3 py-2.5 gap-3'
+      ]">
+
+      <!-- Icons mapped based on id -->
+      <div class="shrink-0 w-5 h-5 flex items-center justify-center transition-transform group-hover:scale-110"
+        :class="page === item.id ? 'text-primary' : ''">
+        <!-- Dashboard -->
+        <svg v-if="item.id === 'overview'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+        <!-- Nginx Config -->
+        <svg v-if="item.id === 'nginx'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+        <!-- SSL Certificates -->
+        <svg v-if="item.id === 'ssl'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        <!-- Domains -->
+        <svg v-if="item.id === 'domains'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+        <!-- Settings -->
+        <svg v-if="item.id === 'settings'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+      </div>
+
+      <span class="whitespace-nowrap transition-opacity duration-200 text-[13px] font-semibold"
+        :class="sidebarCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'">
+        {{ item.label }}
+      </span>
+
+      <!-- Tooltip if collapsed -->
+      <div v-if="sidebarCollapsed"
+        class="absolute left-14 px-3 py-2 bg-surface border border-border text-foreground text-[11px] uppercase tracking-wider font-bold rounded-[8px] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-300 z-50 whitespace-nowrap shadow-xl">
+        {{ item.label }}
+      </div>
     </button>
   </nav>
 
-  <div class="p-3 border-t border-slate-800 space-y-1">
-    <button @click="toggleTheme" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition">
-      <svg v-if="isDark" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-      <svg v-else class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-      </svg>
-      {{ isDark ? 'Light mode' : 'Dark mode' }}
+  <!-- Bottom actions -->
+  <div class="px-3 pb-5 space-y-1">
+    <button @click="doLogout"
+      class="group flex items-center rounded-[10px] font-medium transition-all text-muted hover:bg-red-500/10 hover:text-red-500 outline-none"
+      :class="sidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'w-full px-3 py-2.5 gap-3'">
+      <div class="shrink-0 w-5 h-5 flex items-center justify-center">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+      </div>
+      <span class="whitespace-nowrap transition-opacity duration-200 text-[13px] font-semibold"
+        :class="sidebarCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'">
+        Sign out
+      </span>
+      <div v-if="sidebarCollapsed"
+        class="absolute left-14 px-3 py-2 bg-surface border border-border text-foreground text-[11px] uppercase tracking-wider font-bold rounded-[8px] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-300 z-50 whitespace-nowrap shadow-xl">
+        Sign out
+      </div>
     </button>
-    <button @click="doLogout" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-      </svg>
-      Sign out
+
+    <div class="h-px bg-border my-2 mx-1"></div>
+
+    <button @click="sidebarCollapsed = !sidebarCollapsed"
+      class="group flex items-center rounded-[10px] font-medium transition-all text-muted hover:bg-surface hover:text-foreground outline-none"
+      :class="sidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'w-full px-3 py-2.5 gap-3'">
+      <div class="shrink-0 w-5 h-5 flex items-center justify-center transition-transform duration-300"
+        :class="sidebarCollapsed ? 'rotate-180' : ''">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+      </div>
+      <span class="whitespace-nowrap transition-opacity duration-200 text-[13px] font-semibold"
+        :class="sidebarCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'">
+        Collapse Sidebar
+      </span>
+      <div v-if="sidebarCollapsed"
+        class="absolute left-14 px-3 py-2 bg-surface border border-border text-foreground text-[11px] uppercase tracking-wider font-bold rounded-[8px] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-300 z-50 whitespace-nowrap shadow-xl">
+        Expand Sidebar
+      </div>
     </button>
   </div>
 </aside>

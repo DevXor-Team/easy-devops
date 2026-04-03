@@ -1,128 +1,176 @@
 <!-- SSL Page -->
-<div v-show="page === 'ssl'" class="max-w-6xl mx-auto">
-  <div class="flex items-center justify-between mb-2">
-    <h2 class="text-2xl font-bold">SSL Certificates</h2>
-    <div class="flex gap-2">
-      <button @click="ssl.showCreateForm = !ssl.showCreateForm; ssl.createResult = null; ssl.createError = null" class="btn btn-secondary btn-sm">
-        {{ ssl.showCreateForm ? 'Cancel' : 'New Certificate' }}
-      </button>
-      <button @click="renewAll" :disabled="ssl.renewingDomain !== null" class="btn btn-primary btn-sm">
-        {{ ssl.renewingDomain === 'all' ? 'Renewing...' : 'Renew Expiring' }}
-      </button>
-    </div>
-  </div>
-  <p class="text-slate-400 mb-4">Let's Encrypt certificates managed by certbot</p>
+<div v-show="page === 'ssl'" class="w-full">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h2 class="text-2xl font-bold tracking-tight text-foreground">SSL Certificates</h2>
+<p class="text-muted font-medium text-sm mt-1">Let's Encrypt certificates managed dynamically</p>
+</div>
+<div class="flex gap-3">
+<button @click="ssl.showCreateForm = !ssl.showCreateForm; ssl.createResult = null; ssl.createError = null" class="btn btn-secondary btn-sm">
+{{ ssl.showCreateForm ? 'Cancel' : 'New Certificate' }}
+</button>
+<button @click="renewAll" :disabled="ssl.renewingDomain !== null" class="btn btn-primary btn-sm">
+<svg v-if="ssl.renewingDomain === 'all'" class="w-3 h-3 animate-spin mr-1.5 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+{{ ssl.renewingDomain === 'all' ? 'Renewing All...' : 'Renew Expiring' }}
+</button>
+</div>
+</div>
 
-  <!-- New Certificate inline form -->
-  <div v-if="ssl.showCreateForm" class="card p-4 mb-6">
-    <h3 class="font-semibold mb-3 text-sm">Create New Certificate</h3>
+<!-- New Certificate inline form (Modal/Drawer block logic reused) -->
+<transition name="modal">
+<div v-if="ssl.showCreateForm" class="mb-8 stat-card overflow-hidden relative">
+<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
 
-    <!-- DNS waiting state — shown after 202 response -->
-    <div v-if="ssl.dnsWaiting" class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-3">
-      <p class="text-amber-400 font-semibold">Add this DNS TXT record, then click Continue</p>
-      <div class="space-y-1 font-mono text-xs">
-        <p class="text-slate-300">Name:&nbsp; <span class="text-white">{{ ssl.dnsWaiting.txtName }}</span></p>
-        <p class="text-slate-300">Value: <span class="text-white">{{ ssl.dnsWaiting.txtValue }}</span></p>
-      </div>
-      <div class="flex gap-2 pt-1">
-        <button @click="confirmDns()" :disabled="ssl.dnsConfirming" class="btn btn-primary btn-sm">
-          {{ ssl.dnsConfirming ? 'Verifying...' : "I\'ve added the TXT record, continue" }}
-        </button>
-        <button @click="cancelDns()" :disabled="ssl.dnsConfirming" class="btn btn-secondary btn-sm">
-          Cancel
-        </button>
-      </div>
-    </div>
+<div class="p-5 border-b border-border bg-black/5 dark:bg-white/5">
+<h3 class="font-bold text-[15px] text-foreground tracking-tight">Create New Certificate</h3>
+</div>
+<div class="p-5 bg-background">
+<!-- Error / Result Alerts -->
+<div v-if="ssl.createResult" class="mb-5 p-4 rounded-[12px] bg-green-500/10 border border-green-500/20 text-[13px] shadow-sm">
+<p class="text-green-500 font-bold mb-1">Certificate created successfully</p>
+<p class="text-muted font-mono"><span class="form-label inline mr-2 text-[10px]">Cert</span> {{ ssl.createResult.certPath }}</p>
+<p class="text-muted font-mono"><span class="form-label inline mr-2 text-[10px]">Key</span> {{ ssl.createResult.keyPath }}</p>
+</div>
 
-    <!-- Input form — hidden while DNS waiting -->
-    <div v-if="!ssl.dnsWaiting">
-      <!-- Validation method selector -->
-      <div class="flex gap-4 mb-3">
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="radio" v-model="ssl.createMethod" value="http" />
-          <span class="text-sm">HTTP challenge <span class="text-slate-500">(DNS points here)</span></span>
-        </label>
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="radio" v-model="ssl.createMethod" value="dns" />
-          <span class="text-sm">DNS challenge <span class="text-slate-500">(add TXT record)</span></span>
-        </label>
-      </div>
+<div v-if="ssl.createError" class="mb-5 p-4 rounded-[12px] bg-red-500/10 border border-red-500/20 text-[13px] space-y-1.5 shadow-sm">
+<p class="text-red-500 font-bold text-sm mb-1">Certificate creation failed</p>
+<p class="text-muted"><span class="form-label inline mr-2 text-[10px]">Step</span> {{ ssl.createError.step }}</p>
+<p class="text-muted"><span class="form-label inline mr-2 text-[10px]">Cause</span> {{ ssl.createError.cause }}</p>
+<p class="text-muted"><span class="form-label inline mr-2 text-[10px]">Note</span> {{ ssl.createError.consequence }}</p>
+</div>
 
-      <div class="flex items-end gap-3 flex-wrap">
-        <div class="input-group flex-1 min-w-48">
-          <input v-model="ssl.createDomain" placeholder=" " @keyup.enter="createCert()" />
-          <label>Domain name</label>
-        </div>
-        <div class="flex items-center gap-2 pb-1">
-          <label class="switch">
-            <input type="checkbox" v-model="ssl.createWww" />
-            <span class="slider"></span>
-          </label>
-          <span class="text-sm text-slate-400">Include www</span>
-        </div>
-        <button @click="createCert()" :disabled="ssl.creating || !ssl.createDomain.trim()" class="btn btn-primary btn-sm">
-          {{ ssl.creating ? 'Creating...' : 'Create' }}
-        </button>
-      </div>
-    </div>
+<!-- DNS waiting state -->
+<div v-if="ssl.dnsWaiting" class="p-4 rounded-[12px] bg-amber-500/10 border border-amber-500/20 text-sm shadow-sm space-y-3">
+<p class="text-amber-500 font-bold">Add this DNS TXT record, then click Continue</p>
+<div class="space-y-1 font-mono text-xs p-3 bg-black/5 dark:bg-white/5 border border-border/50 rounded-[10px]">
+<p class="text-muted">Name:&nbsp; <span class="text-foreground">{{ ssl.dnsWaiting.txtName }}</span></p>
+<p class="text-muted">Value: <span class="text-foreground border border-border/30 px-1 py-0.5 rounded break-all select-all">{{ ssl.dnsWaiting.txtValue }}</span></p>
+</div>
+<div class="flex gap-2 pt-2">
+<button @click="confirmDns()" :disabled="ssl.dnsConfirming" class="btn btn-primary min-w-[120px]">
+{{ ssl.dnsConfirming ? 'Verifying...' : "I've added the TXT record" }}
+</button>
+<button @click="cancelDns()" :disabled="ssl.dnsConfirming" class="btn btn-secondary">Cancel</button>
+</div>
+</div>
 
-    <!-- Success result -->
-    <div v-if="ssl.createResult" class="mt-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-xs">
-      <p class="text-green-400 font-semibold mb-1">Certificate created successfully</p>
-      <p class="text-slate-400 font-mono">Cert: {{ ssl.createResult.certPath }}</p>
-      <p class="text-slate-400 font-mono">Key:  {{ ssl.createResult.keyPath }}</p>
-    </div>
+<!-- Input form -->
+<div v-if="!ssl.dnsWaiting">
+<div class="flex flex-col sm:flex-row sm:items-center gap-6 mb-6 pb-6 border-b border-border/50">
+<label class="flex items-start gap-3 cursor-pointer group">
+<input type="radio" v-model="ssl.createMethod" value="http" class="w-4 h-4 mt-0.5 text-primary bg-input border-border focus:ring-primary focus:ring-offset-background" />
+<div class="flex flex-col">
+<span class="text-[13px] font-bold text-foreground group-hover:text-primary transition-colors">HTTP Challenge</span>
+<span class="text-[11px] font-medium text-muted mt-0.5">DNS A record must point to this server</span>
+</div>
+</label>
+<label class="flex items-start gap-3 cursor-pointer group">
+<input type="radio" v-model="ssl.createMethod" value="dns" class="w-4 h-4 mt-0.5 text-primary bg-input border-border focus:ring-primary focus:ring-offset-background" />
+<div class="flex flex-col">
+<span class="text-[13px] font-bold text-foreground group-hover:text-primary transition-colors">DNS Challenge</span>
+<span class="text-[11px] font-medium text-muted mt-0.5">Requires adding a TXT record to your DNS provider</span>
+</div>
+</label>
+</div>
 
-    <!-- Structured error -->
-    <div v-if="ssl.createError" class="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs space-y-1">
-      <p class="text-red-400 font-semibold">Certificate creation failed</p>
-      <p class="text-slate-400"><span class="text-slate-300">Step:</span> {{ ssl.createError.step }}</p>
-      <p class="text-slate-400"><span class="text-slate-300">Cause:</span> {{ ssl.createError.cause }}</p>
-      <p class="text-slate-400"><span class="text-slate-300">Consequence:</span> {{ ssl.createError.consequence }}</p>
-      <p class="text-slate-400"><span class="text-slate-300">nginx running:</span> {{ ssl.createError.nginxRunning ? 'yes' : 'no' }}</p>
-    </div>
-  </div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-6 items-end">
+<div class="w-full">
+<label class="form-label">Email (Let's Encrypt)</label>
+<input v-model="ssl.createEmail" type="email" class="form-input" placeholder="admin@example.com" />
+</div>
+<div class="w-full">
+<label class="form-label">Domain Name</label>
+<input v-model="ssl.createDomain" @keyup.enter="createCert()" class="form-input" placeholder="example.com" />
+</div>
 
-  <div v-if="ssl.error" class="card p-4 mb-6 bg-red-500/10 border-red-500/20 text-red-400">
-    {{ ssl.error }}
-  </div>
+<div class="flex items-center gap-4 py-1">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="ssl.createWww" class="sr-only peer" />
+<div class="w-10 h-5 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold text-foreground">Include www</span>
+</div>
 
-  <div v-if="ssl.loading" class="text-slate-500">Loading certificates...</div>
+<div class="flex justify-end pt-2">
+<button @click="createCert()" :disabled="ssl.creating || !ssl.createDomain.trim() || !ssl.createEmail.trim()" class="btn btn-primary min-w-[120px]">
+<svg v-if="ssl.creating" class="w-4 h-4 animate-spin inline-block mr-1.5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+{{ ssl.creating ? 'Working...' : 'Create Certificate' }}
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</transition>
 
-  <div v-else-if="ssl.certs.length === 0" class="card p-12 text-center">
-    <p class="text-slate-500">No certificates found. Use the CLI to issue certificates.</p>
-  </div>
+<div v-if="ssl.error" class="mb-6 p-4 rounded-[12px] bg-red-500/10 border border-red-500/20 text-red-500 text-[13px] font-bold shadow-sm">
+{{ ssl.error }}
+</div>
 
-  <div v-else class="card overflow-hidden">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Domain</th>
-          <th>Expires</th>
-          <th>Days Left</th>
-          <th>Status</th>
-          <th class="text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="cert in ssl.certs" :key="cert.domain">
-          <td class="font-mono text-sm">{{ cert.domain }}</td>
-          <td class="text-slate-400">{{ cert.expiry ? new Date(cert.expiry).toLocaleDateString() : '—' }}</td>
-          <td>
-            <span :class="certDaysColor(cert)" class="font-mono font-semibold">
-              {{ cert.daysLeft !== null ? cert.daysLeft + 'd' : '—' }}
-            </span>
-          </td>
-          <td>
-            <span :class="'badge badge-' + certBadgeType(cert)">{{ certStatus(cert) }}</span>
-          </td>
-          <td class="text-right">
-            <button @click="renewCert(cert.domain)" :disabled="ssl.renewingDomain !== null" class="btn btn-secondary btn-sm" :class="{ 'opacity-50': ssl.renewingDomain !== null }">
-              {{ ssl.renewingDomain === cert.domain ? 'Renewing...' : 'Renew' }}
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+<div v-if="ssl.loading" class="text-muted text-sm flex items-center gap-3">
+<div class="w-full flex flex-col gap-2">
+<div class="h-16 w-full animate-pulse-fx stat-card"></div>
+<div class="h-16 w-full animate-pulse-fx stat-card"></div>
+<div class="h-16 w-full animate-pulse-fx stat-card"></div>
+</div>
+</div>
+
+<div v-else-if="ssl.certs.length === 0" class="stat-card p-16 text-center relative overflow-hidden">
+<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
+<div class="flex justify-center mb-4">
+<div class="w-16 h-16 rounded-[16px] flex items-center justify-center text-primary shadow-lg" style="background: rgba(var(--color-primary-rgb), 0.1); color: var(--color-primary);">
+<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+</div>
+</div>
+<h3 class="text-lg font-semibold text-foreground tracking-tight">No SSL Certificates</h3>
+<p class="text-muted text-sm mt-2 max-w-sm mx-auto">It's highly recommended to generate an SSL certificate to secure your proxies.</p>
+</div>
+
+<div v-else class="stat-card overflow-hidden flex flex-col">
+<!-- Header pseudo-row -->
+<div class="flex items-center px-6 py-3 border-b border-border bg-black/5 dark:bg-white/5">
+<div class="w-8 shrink-0"></div> <!-- for status dot -->
+<div class="flex-1 form-label !mb-0 text-left text-[11px] font-bold">Domain Name</div>
+<div class="w-32 form-label !mb-0 text-left text-[11px] font-bold">Expiry</div>
+<div class="w-32 form-label !mb-0 text-left text-[11px] font-bold">Time Left</div>
+<div class="w-24 form-label !mb-0 text-left text-[11px] font-bold">Status</div>
+<div class="w-32 form-label !mb-0 text-right text-[11px] font-bold pr-2">Action</div>
+</div>
+
+<!-- Rows -->
+<div v-for="cert in ssl.certs" :key="cert.domain" class="domain-row group">
+<!-- Status Dot based on expiry -->
+<div class="w-8 shrink-0 flex items-center justify-center -ml-1">
+<div class="status-dot" :class="cert.daysLeft > 10 ? 'active' : 'inactive'"></div>
+</div>
+
+<!-- Domain -->
+<div class="flex-1 min-w-0 pr-4">
+<div class="font-mono text-[14px] font-semibold text-foreground truncate select-all">{{ cert.domain }}</div>
+</div>
+
+<!-- Expiry Date -->
+<div class="w-32 shrink-0 truncate text-[13px] text-muted">
+{{ cert.expiry ? new Date(cert.expiry).toLocaleDateString() : '—' }}
+</div>
+
+<!-- Days Left -->
+<div class="w-32 shrink-0 truncate text-[14px] font-mono font-bold" :class="certDaysColor(cert)">
+{{ cert.daysLeft !== null ? cert.daysLeft + 'd' : '—' }}
+</div>
+
+<!-- Badges -->
+<div class="w-24 shrink-0">
+<span class="badge" :class="'badge-' + certBadgeType(cert)">{{ certStatus(cert) }}</span>
+</div>
+
+<!-- Actions -->
+<div class="w-32 flex justify-end shrink-0 domain-actions">
+<button @click="renewCert(cert.domain)" :disabled="ssl.renewingDomain !== null" class="btn btn-secondary btn-sm h-8" :class="{ 'opacity-50': ssl.renewingDomain !== null }">
+<svg v-if="ssl.renewingDomain === cert.domain" class="w-3 h-3 animate-spin mr-1 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+{{ ssl.renewingDomain === cert.domain ? 'Working' : 'Renew' }}
+</button>
+</div>
+</div>
+</div>
 </div>

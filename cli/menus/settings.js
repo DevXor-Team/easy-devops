@@ -15,14 +15,16 @@ export default async function settingsMenu() {
   while (true) {
     // T013: display current values
     const passwordDisplay = config.dashboardPassword ? '***' : '(not set)';
+    const emailDisplay = config.acmeEmail || '(not set)';
 
     console.log();
-    console.log(chalk.bold('⚙️  Settings'));
+    console.log(chalk.bold('⚙️ Settings'));
     console.log(chalk.gray('─'.repeat(40)));
-    console.log(`  Dashboard Port:     ${chalk.cyan(config.dashboardPort)}`);
-    console.log(`  Dashboard Password: ${chalk.cyan(passwordDisplay)}`);
-    console.log(`  Nginx Directory:    ${chalk.cyan(config.nginxDir)}`);
-    console.log(`  Certbot Directory:  ${chalk.cyan(config.certbotDir)}`);
+    console.log(` Dashboard Port: ${chalk.cyan(config.dashboardPort)}`);
+    console.log(` Dashboard Password: ${chalk.cyan(passwordDisplay)}`);
+    console.log(` Nginx Directory: ${chalk.cyan(config.nginxDir)}`);
+    console.log(` SSL Directory: ${chalk.cyan(config.sslDir)}`);
+    console.log(` ACME Email: ${chalk.cyan(emailDisplay)}`);
     console.log();
 
     // T014: field selection
@@ -31,10 +33,11 @@ export default async function settingsMenu() {
       name: 'field',
       message: 'Select a field to edit:',
       choices: [
-        { name: `Dashboard Port     (${config.dashboardPort})`, value: 'dashboardPort' },
+        { name: `Dashboard Port (${config.dashboardPort})`, value: 'dashboardPort' },
         { name: `Dashboard Password (${passwordDisplay})`, value: 'dashboardPassword' },
-        { name: `Nginx Directory    (${config.nginxDir})`, value: 'nginxDir' },
-        { name: `Certbot Directory  (${config.certbotDir})`, value: 'certbotDir' },
+        { name: `Nginx Directory (${config.nginxDir})`, value: 'nginxDir' },
+        { name: `SSL Directory (${config.sslDir})`, value: 'sslDir' },
+        { name: `ACME Email (${emailDisplay})`, value: 'acmeEmail' },
         { name: '← Back', value: 'back' },
       ],
     }]);
@@ -67,6 +70,22 @@ export default async function settingsMenu() {
         mask: '*',
       }]);
       config.dashboardPassword = value;
+      saveConfig(config); // T016
+
+    } else if (field === 'acmeEmail') {
+      const { value } = await inquirer.prompt([{
+        type: 'input',
+        name: 'value',
+        message: 'ACME Email (Let\'s Encrypt):',
+        default: config.acmeEmail || '',
+        validate(input) {
+          if (input && !input.includes('@')) {
+            return chalk.red('Please enter a valid email address.');
+          }
+          return true;
+        },
+      }]);
+      config.acmeEmail = value;
       saveConfig(config); // T016
 
     } else {

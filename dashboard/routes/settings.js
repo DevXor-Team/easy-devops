@@ -9,11 +9,12 @@ router.get('/settings', (req, res) => {
   try {
     const config = loadConfig();
     // Never return the password (write-only field)
-    const { dashboardPort, nginxDir, certbotDir } = config;
+    const { dashboardPort, nginxDir, sslDir, acmeEmail } = config;
     res.json({
       dashboardPort,
       nginxDir,
-      certbotDir,
+      sslDir,
+      acmeEmail,
       platform: process.platform === 'win32' ? 'win32' : 'linux',
     });
   } catch (err) {
@@ -25,7 +26,7 @@ router.get('/settings', (req, res) => {
 
 router.post('/settings', (req, res) => {
   try {
-    const { dashboardPort, dashboardPassword, nginxDir, certbotDir } = req.body;
+    const { dashboardPort, dashboardPassword, nginxDir, sslDir, acmeEmail } = req.body;
 
     // Validate port if provided
     if (dashboardPort !== undefined) {
@@ -45,8 +46,13 @@ router.post('/settings', (req, res) => {
       return res.status(400).json({ error: 'Nginx directory must be a non-empty string' });
     }
 
-    if (certbotDir !== undefined && (typeof certbotDir !== 'string' || certbotDir.trim() === '')) {
-      return res.status(400).json({ error: 'Certbot directory must be a non-empty string' });
+    if (sslDir !== undefined && (typeof sslDir !== 'string' || sslDir.trim() === '')) {
+      return res.status(400).json({ error: 'SSL directory must be a non-empty string' });
+    }
+
+    // Validate email if provided
+    if (acmeEmail !== undefined && acmeEmail !== '' && !acmeEmail.includes('@')) {
+      return res.status(400).json({ error: 'Invalid email address' });
     }
 
     // Load current config and merge updates
@@ -62,8 +68,11 @@ router.post('/settings', (req, res) => {
     if (nginxDir !== undefined) {
       updates.nginxDir = nginxDir.trim();
     }
-    if (certbotDir !== undefined) {
-      updates.certbotDir = certbotDir.trim();
+    if (sslDir !== undefined) {
+      updates.sslDir = sslDir.trim();
+    }
+    if (acmeEmail !== undefined) {
+      updates.acmeEmail = acmeEmail.trim();
     }
 
     const newConfig = { ...currentConfig, ...updates };

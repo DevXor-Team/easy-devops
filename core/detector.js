@@ -1,28 +1,28 @@
 /**
- * core/detector.js
- *
- * Automatic server environment detection.
- *
- * DB key: 'system-detection'
- *
- * Exported functions:
- *   - runDetection()        — collects all system info, writes to DB, silent on success
- *   - showSystemStatus()    — reads DB, prints chalk-formatted table to stdout
- *   - getDetectionResult()  — thin wrapper around dbGet('system-detection') for other modules
- *
- * SystemDetectionResult schema:
- * {
- *   detectedAt: string,           // ISO 8601 timestamp
- *   os:      { type, release },
- *   nodejs:  { version },
- *   npm:     { installed, version },
- *   nginx:   { installed, version, path },
- *   certbot: { installed, version }
- * }
- *
- * Returns undefined (never throws) when detection has never run.
- * Other modules should import getDetectionResult() rather than coupling to the raw DB key.
- */
+* core/detector.js
+*
+* Automatic server environment detection.
+*
+* DB key: 'system-detection'
+*
+* Exported functions:
+* - runDetection() — collects all system info, writes to DB, silent in success
+* - showSystemStatus() — reads DB, prints chalk-formatted table to stdout
+* - getDetectionResult() — thin wrapper around dbGet('system-detection') for other modules
+*
+* SystemDetectionResult schema:
+* {
+*   detectedAt: string, // ISO 8601 timestamp
+*   os: { type, release },
+*   nodejs: { version },
+*   npm: { installed, version },
+*   nginx: { installed, version, path },
+*   acme: { type: 'acme-client' } // Pure Node.js ACME client
+* }
+*
+* Returns undefined (never throws) when detection has never run.
+* Other modules should import getDetectionResult() rather than coupling to the raw DB key.
+*/
 
 import os from 'os';
 import chalk from 'chalk';
@@ -46,7 +46,7 @@ export async function runDetection() {
   // npm
   const npmResult = await run('npm --version');
   const npmInfo = npmResult.success
-    ? { installed: true, version: npmResult.stdout }
+    ? { installed: true, version: npmResult.stdout.trim() }
     : { installed: false, version: null };
 
   // nginx detection — two-step on Windows: PATH first, configured path as fallback.
@@ -101,36 +101,9 @@ export async function runDetection() {
     }
   }
 
-  // certbot — try PATH first, then the well-known Windows install location.
-  // The winget/official installer puts certbot in C:\Program Files\Certbot\bin\
-  // which may not be reflected in the current session PATH immediately after install.
-  const CERTBOT_WIN_EXE = 'C:\\Program Files\\Certbot\\bin\\certbot.exe';
-  let certbotExe = 'certbot';
-
-  if (platform === 'win32') {
-    const pathCheck = await run('where.exe certbot');
-    if (pathCheck.exitCode !== 0 || !pathCheck.stdout.trim()) {
-      // Fall back to the known install path
-      const exeCheck = await run(`Test-Path "${CERTBOT_WIN_EXE}"`);
-      if (exeCheck.stdout.trim().toLowerCase() === 'true') {
-        certbotExe = CERTBOT_WIN_EXE;
-      }
-    }
-  }
-
-  // Use & "..." in PowerShell when the exe is a full path, otherwise bare name
-  const certbotCmd = (platform === 'win32' && certbotExe !== 'certbot')
-    ? `& "${certbotExe}" --version`
-    : `${certbotExe} --version`;
-  const certbotResult = await run(certbotCmd);
-  const certbotCombined = certbotResult.stdout + ' ' + certbotResult.stderr;
-  let certbotInfo;
-  if (certbotResult.success || certbotCombined.match(/certbot\s+[\d.]+/i)) {
-    const match = certbotCombined.match(/certbot\s+([\d.]+)/i);
-    certbotInfo = { installed: true, version: match ? match[1] : null };
-  } else {
-    certbotInfo = { installed: false, version: null };
-  }
+  // ACME client — pure Node.js (acme-client npm package)
+  // No external binary needed; detection is informational only.
+  const acmeInfo = { type: 'acme-client' };
 
   const result = {
     detectedAt: new Date().toISOString(),
@@ -138,7 +111,7 @@ export async function runDetection() {
     nodejs: nodejsInfo,
     npm: npmInfo,
     nginx: nginxInfo,
-    certbot: certbotInfo,
+    acme: acmeInfo,
   };
 
   try {
@@ -177,26 +150,21 @@ export function showSystemStatus() {
   if (result.npm.installed) {
     console.log(label('npm') + chalk.white(result.npm.version));
   } else {
-    console.log(label('npm') + chalk.red('✗  not installed'));
+    console.log(label('npm') + chalk.red('✗ not installed'));
   }
 
   // nginx
   if (result.nginx.installed) {
     const parts = [chalk.green('✓'), result.nginx.version, result.nginx.path]
       .filter(Boolean)
-      .join('  ');
+      .join(' ');
     console.log(label('nginx') + parts);
   } else {
-    console.log(label('nginx') + chalk.red('✗  not installed'));
+    console.log(label('nginx') + chalk.red('✗ not installed'));
   }
 
-  // certbot
-  if (result.certbot.installed) {
-    const parts = [chalk.green('✓'), result.certbot.version].filter(Boolean).join('  ');
-    console.log(label('certbot') + parts);
-  } else {
-    console.log(label('certbot') + chalk.red('✗  not installed'));
-  }
+  // ACME
+  console.log(label('ACME') + chalk.green('acme-client (Node.js)'));
 
   console.log(SEP);
   console.log(chalk.gray(`Last detected: ${result.detectedAt}`));
@@ -206,14 +174,14 @@ export function showSystemStatus() {
 // ─── getDetectionResult ───────────────────────────────────────────────────────
 
 /**
- * Returns the latest SystemDetectionResult from the database,
- * or undefined if detection has never run.
- *
- * Usage by other modules:
- *   import { getDetectionResult } from '../core/detector.js';
- *   const detection = getDetectionResult();
- *   const { nginx } = detection ?? {};
- */
+* Returns the latest SystemDetectionResult from the database,
+* or undefined if detection has never run.
+*
+* Usage by other modules:
+*   import { getDetectionResult } from '../core/detector.js';
+*   const detection = getDetectionResult();
+*   const { nginx } = detection ?? {};
+*/
 export function getDetectionResult() {
   return dbGet('system-detection');
 }
@@ -221,15 +189,15 @@ export function getDetectionResult() {
 // ─── formatStatusLine ─────────────────────────────────────────────────────────
 
 /**
- * Returns a compact inline status string for embedding in the main menu header.
- * Format: "nginx: ✅ v1.26  |  certbot: ✅  |  node: v20.11"
- * Returns a warning string if detection result is undefined.
- */
+* Returns a compact inline status string for embedding in the main menu header.
+* Format: "nginx: ✅ v1.26 | ACME: acme-client | node: v20.11"
+* Returns a warning string if detection result is undefined.
+*/
 export function formatStatusLine() {
   const result = getDetectionResult();
 
   if (!result) {
-    return chalk.yellow('⚠  System detection not available — run detection first.');
+    return chalk.yellow('⚠ System detection not available — run detection first.');
   }
 
   const parts = [];
@@ -242,16 +210,11 @@ export function formatStatusLine() {
     parts.push(`nginx: ${chalk.yellow('⚠ not found')}`);
   }
 
-  // certbot
-  if (result.certbot.installed) {
-    const ver = result.certbot.version ? ` v${result.certbot.version}` : '';
-    parts.push(`certbot: ✅${ver}`);
-  } else {
-    parts.push(`certbot: ${chalk.yellow('⚠ not found')}`);
-  }
+  // ACME (always available since it's pure Node.js)
+  parts.push('ACME: ✅ acme-client');
 
   // node
   parts.push(`node: ${result.nodejs.version}`);
 
-  return parts.join('  |  ');
+  return parts.join(' | ');
 }

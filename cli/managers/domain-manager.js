@@ -56,13 +56,14 @@ async function listDomainsAction() {
   const table = new Table({
     head: [
       chalk.cyan('Domain'),
-      chalk.cyan('Port'),
+      chalk.cyan('Backend'),
       chalk.cyan('Type'),
       chalk.cyan('SSL'),
+      chalk.cyan('Status'),
       chalk.cyan('Cert'),
     ],
     style: { head: [], border: ['gray'] },
-    colWidths: [30, 8, 8, 8, 8],
+    colWidths: [28, 20, 8, 8, 10, 8],
   });
 
   for (const d of domains) {
@@ -72,11 +73,18 @@ async function listDomainsAction() {
       ? (d.daysLeft > 30 ? chalk.green(`${d.daysLeft}d`) : chalk.yellow(`${d.daysLeft}d`))
       : chalk.gray('—');
 
+    const backend = /^https?:\/\//i.test(d.backendHost || '')
+      ? d.backendHost.replace(/^https?:\/\//, '')
+      : `${d.backendHost || '127.0.0.1'}:${d.port}`;
+    const status = d.enabled === false
+      ? chalk.gray('DISABLED')
+      : (d.wildcard ? chalk.blue('WILDCARD') : chalk.green('active'));
     table.push([
       d.name,
-      d.port.toString(),
+      backend,
       type,
       sslStatus,
+      status,
       certDays,
     ]);
   }
@@ -91,14 +99,39 @@ async function addDomainAction() {
 
   // Section 1: Basic
   const basic = await inquirer.prompt([
-    { type: 'input', name: 'name', message: 'Domain name:', validate: (v) => v.trim() ? true : 'Required' },
-    { type: 'input', name: 'backendHost', message: 'Backend host:', default: '127.0.0.1' },
-    { type: 'number', name: 'port', message: 'Backend port:', default: 3000, validate: (v) => (v >= 1 && v <= 65535) ? true : 'Port must be 1-65535' },
+    { type: 'confirm', name: 'wildcard', message: 'Wildcard domain (*.example.com)?', default: false },
+    {
+      type: 'input', name: 'name',
+      message: (ans) => ans.wildcard
+        ? 'Domain name (without *. prefix — it will be added automatically):'
+        : 'Domain name:',
+      validate: (v) => {
+        const bare = v.trim().startsWith('*.') ? v.trim().slice(2) : v.trim();
+        if (!bare) return 'Required';
+        const labelPattern = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
+        const labels = bare.split('.');
+        if (labels.length < 2) return 'Must have at least two labels (e.g. example.com)';
+        for (const label of labels) {
+          if (!label || !labelPattern.test(label)) return 'Invalid domain name format';
+        }
+        return true;
+      },
+      filter: (v) => v.trim().startsWith('*.') ? v.trim().slice(2) : v.trim(),
+    },
+    { type: 'input', name: 'backendHost', message: 'Backend host or full URL:', default: '127.0.0.1' },
+    {
+      type: 'number', name: 'port', message: 'Backend port (ignored for full URLs):', default: 3000,
+      validate: (v) => (v >= 1 && v <= 65535) ? true : 'Port must be 1-65535',
+      when: (ans) => !/^https?:\/\//i.test(ans.backendHost),
+    },
     {
       type: 'list', name: 'upstreamType', message: 'Upstream type:', default: 'http',
       choices: ['http', 'https', 'ws'],
     },
-    { type: 'confirm', name: 'www', message: 'Include www subdomain?', default: false },
+    {
+      type: 'confirm', name: 'www', message: 'Include www subdomain?', default: false,
+      when: (ans) => !ans.wildcard,
+    },
   ]);
 
   // Check for duplicate
@@ -115,14 +148,14 @@ async function addDomainAction() {
   let ssl = { ...DOMAIN_DEFAULTS.ssl, enabled: sslAnswers.enabled };
 
   if (ssl.enabled) {
-    const { nginxDir, certbotDir } = loadConfig();
+    const { nginxDir, sslDir } = loadConfig();
     const platform = isWindows ? 'win32' : 'linux';
     const defaultCertPath = platform === 'win32'
-      ? `C:\\Certbot\\live\\${basic.name}\\fullchain.pem`
-      : `${certbotDir}/live/${basic.name}/fullchain.pem`;
+      ? `C:\\ssl\\${basic.name}\\fullchain.pem`
+      : `${sslDir}/${basic.name}/fullchain.pem`;
     const defaultKeyPath = platform === 'win32'
-      ? `C:\\Certbot\\live\\${basic.name}\\privkey.pem`
-      : `${certbotDir}/live/${basic.name}/privkey.pem`;
+      ? `C:\\ssl\\${basic.name}\\privkey.pem`
+      : `${sslDir}/${basic.name}/privkey.pem`;
 
     const sslDetails = await inquirer.prompt([
       { type: 'input', name: 'certPath', message: 'SSL cert path:', default: defaultCertPath },
@@ -179,7 +212,7 @@ async function addDomainAction() {
 
       if (certAction === 'Create certificate now') {
         const spinner = ora(`Creating certificate for ${basic.name}…`).start();
-        const result = await issueCert(basic.name, { www: basic.www });
+        const result = await issueCert(basic.name, { www: basic.www, wildcard: basic.wildcard, validationMethod: basic.wildcard ? 'dns' : 'http' });
         spinner.stop();
 
         if (result.success) {
@@ -268,6 +301,7 @@ async function addDomainAction() {
     backendHost: basic.backendHost,
     upstreamType: basic.upstreamType,
     www: basic.www,
+    wildcard: basic.wildcard,
     ssl,
     performance,
     security,
@@ -456,6 +490,97 @@ async function reloadNginxAfterChange() {
   return true;
 }
 
+// ─── Toggle Domain (Enable/Disable) ───────────────────────────────────────────
+
+async function toggleDomainAction() {
+  const domains = getDomains();
+
+  if (domains.length === 0) {
+    console.log(chalk.yellow('\n No domains configured.\n'));
+    return;
+  }
+
+  const { selectedName } = await inquirer.prompt([{
+    type: 'list',
+    name: 'selectedName',
+    message: 'Select domain to enable/disable:',
+    choices: domains.map(d => {
+      const status = d.enabled === false ? chalk.gray('[DISABLED]') : chalk.green('[active]');
+      return { name: `${d.name} ${status}`, value: d.name };
+    }),
+  }]);
+
+  const domain = findDomain(selectedName);
+  if (!domain) return;
+
+  const isEnabled = domain.enabled !== false;
+  const action = isEnabled ? 'disable' : 'enable';
+
+  const { confirmed } = await inquirer.prompt([{
+    type: 'confirm',
+    name: 'confirmed',
+    message: `${action.charAt(0).toUpperCase() + action.slice(1)} "${selectedName}"?`,
+    default: false,
+  }]);
+
+  if (!confirmed) {
+    console.log(chalk.gray('\n Cancelled.\n'));
+    return;
+  }
+
+  const { nginxDir } = loadConfig();
+  const confPath = domain.configFile;
+
+  if (!confPath) {
+    console.log(chalk.red('\n No config file path stored for this domain.\n'));
+    return;
+  }
+
+  const basePath = confPath.replace(/\.disabled$/, '');
+  const enabledPath = basePath;
+  const disabledPath = `${basePath}.disabled`;
+  const spinner = ora(`${action.charAt(0).toUpperCase() + action.slice(1)}ing domain...`).start();
+
+  try {
+    if (isEnabled) {
+      await fs.rename(enabledPath, disabledPath);
+    } else {
+      await fs.rename(disabledPath, enabledPath);
+      // Test config before reload
+      const testResult = await run(nginxTestCmd(nginxDir), { cwd: nginxDir });
+      if (!testResult.success) {
+        await fs.rename(enabledPath, disabledPath).catch(() => {});
+        spinner.fail('Config test failed — rolled back');
+        console.log(chalk.red('\n' + combineOutput(testResult)));
+        return;
+      }
+    }
+
+    // Update DB
+    const allDomains = getDomains();
+    const idx = allDomains.findIndex(d => d.name === selectedName);
+    allDomains[idx] = {
+      ...domain,
+      enabled: !isEnabled,
+      configFile: isEnabled ? disabledPath : enabledPath,
+      updatedAt: new Date().toISOString(),
+    };
+    saveDomains(allDomains);
+
+    // Reload nginx
+    const reloadResult = await run(nginxReloadCmd(nginxDir), { cwd: nginxDir });
+    if (!reloadResult.success) {
+      spinner.warn(`Domain ${action}d but nginx reload failed`);
+      console.log(chalk.yellow('\n' + combineOutput(reloadResult)));
+    } else {
+      spinner.succeed(`Domain "${selectedName}" ${action}d`);
+    }
+  } catch (err) {
+    spinner.fail(`Failed to ${action} domain`);
+    console.log(chalk.red(err.message));
+  }
+}
+
 // ─── Main Menu (T026, T029-T033) ──────────────────────────────────────────────
 
 export async function showDomainManager() {
@@ -471,6 +596,7 @@ export async function showDomainManager() {
       'List Domains',
       'Add Domain',
       'Edit Domain',
+      'Enable / Disable Domain',
       'Delete Domain',
       new inquirer.Separator(),
       '← Back',
@@ -498,6 +624,9 @@ export async function showDomainManager() {
         break;
       case 'Edit Domain':
         await editDomainAction();
+        break;
+      case 'Enable / Disable Domain':
+        await toggleDomainAction();
         break;
       case 'Delete Domain':
         await deleteDomainAction();

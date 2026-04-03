@@ -8,6 +8,7 @@ const DEFAULT_FORM = {
   backendHost: '127.0.0.1',
   upstreamType: 'http',
   www: false,
+  wildcard: false,
   ssl: {
     enabled: false,
     certPath: '',
@@ -42,6 +43,8 @@ createApp({
   data() {
     return {
       theme: localStorage.getItem('ed-theme') || 'dark',
+      accent: localStorage.getItem('ed-accent') || 'teal',
+      sidebarCollapsed: localStorage.getItem('ed-sidebar') === 'true',
       authenticated: false,
       page: 'overview',
 
@@ -66,11 +69,11 @@ createApp({
       ssl: {
         certs: [], loading: false, error: '', renewingDomain: null,
         showCreateForm: false,
-        createDomain: '', createWww: false,
+        createDomain: '', createWww: false, createEmail: '',
         creating: false, createResult: null, createError: null,
-        createMethod: 'http',        // 'http' | 'dns'
-        dnsWaiting: null,            // { txtName, txtValue, domain } | null
-        dnsConfirming: false,        // true while confirm call is in-flight
+        createMethod: 'http', // 'http' | 'dns'
+        dnsWaiting: null, // { txtName, txtValue, domain } | null
+        dnsConfirming: false, // true while confirm call is in-flight
       },
 
       // T017-T019: Updated domains state
@@ -81,11 +84,11 @@ createApp({
         saving: false,
         dirty: false, // T019: Track unsaved changes
         form: JSON.parse(JSON.stringify(DEFAULT_FORM)), // T025: Nested v2 structure
-        certMissing: null,   // { certPath, keyPath, hint } set when POST /api/domains returns 422
+        certMissing: null, // { certPath, keyPath, hint } set when POST /api/domains returns 422
         certCreating: false, // true while POST /api/ssl/create is in-flight
         certCreateError: null, // structured error from a failed cert creation
-        certMethod: 'http',     // 'http' | 'dns' — method selected in cert_missing section
-        certDnsWaiting: null,   // { txtName, txtValue, domain } while DNS two-phase is in progress
+        certMethod: 'http', // 'http' | 'dns' — method selected in cert_missing section
+        certDnsWaiting: null, // { txtName, txtValue, domain } while DNS two-phase is in progress
         certDnsConfirming: false, // true while /create-confirm call is in-flight
       },
 
@@ -99,7 +102,7 @@ createApp({
       },
 
       settings: {
-        dashboardPort: '', nginxDir: '', certbotDir: '',
+        dashboardPort: '', nginxDir: '', sslDir: '', acmeEmail: '',
         password: '', loading: false, msg: '', error: '',
         platform: 'linux', // T022: Platform from settings API
       },
@@ -109,12 +112,34 @@ createApp({
   computed: {
     isDark() { return this.theme === 'dark'; },
     expiringCount() { return this.ssl.certs.filter(c => c.daysLeft !== null && c.daysLeft < 30).length; },
+    swalTheme() {
+      // Create dynamically evaluated properties based on current CSS variables
+      const rootStyle = getComputedStyle(document.documentElement);
+      return {
+        background: 'var(--color-surface)',
+        color: 'var(--color-text)',
+        confirmButtonColor: rootStyle.getPropertyValue('--color-primary').trim(),
+        cancelButtonColor: 'transparent',
+        customClass: {
+          confirmButton: 'btn btn-primary',
+          cancelButton: 'btn btn-secondary',
+          popup: 'swal2-popup'
+        }
+      };
+    },
   },
 
   watch: {
     theme(val) {
       localStorage.setItem('ed-theme', val);
       document.documentElement.classList.toggle('dark', val === 'dark');
+    },
+    accent(val) {
+      localStorage.setItem('ed-accent', val);
+      document.documentElement.setAttribute('data-accent', val);
+    },
+    sidebarCollapsed(val) {
+      localStorage.setItem('ed-sidebar', val);
     },
 
     // T019: Deep watch form for dirty tracking
@@ -133,6 +158,13 @@ createApp({
         this.autoPopulateCertPaths();
       }
     },
+
+    // Wildcard: force DNS cert method when wildcard is enabled
+    'domains.form.wildcard'(newVal) {
+      if (newVal) {
+        this.domains.certMethod = 'dns';
+      }
+    },
   },
 
   // T020: beforeunload guard for unsaved changes
@@ -147,6 +179,7 @@ createApp({
 
   async mounted() {
     document.documentElement.classList.toggle('dark', this.theme === 'dark');
+    document.documentElement.setAttribute('data-accent', this.accent);
 
     // Check if already authenticated
     try {
@@ -177,6 +210,7 @@ createApp({
 
     // ── Theme ─────────────────────────────────────────────────────────────────
     toggleTheme() { this.theme = this.theme === 'dark' ? 'light' : 'dark'; },
+    setAccent(color) { this.accent = color; },
 
     // ── Auth ──────────────────────────────────────────────────────────────────
     async doLogin() {
@@ -194,11 +228,17 @@ createApp({
 
     // ── Navigation (T021: Nav click guard) ────────────────────────────────────
     async navigateTo(pageId) {
-      // T021: Check for unsaved changes before navigation
       if (this.domains.dirty && this.domains.showForm) {
-        if (!confirm('You have unsaved changes. Discard them and continue?')) {
-          return;
-        }
+        const { isConfirmed } = await Swal.fire({
+          title: 'Unsaved changes',
+          text: 'Discard changes and continue?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Discard',
+          cancelButtonText: 'Stay',
+          ...this.swalTheme,
+        });
+        if (!isConfirmed) return;
         this.resetDomainForm();
       }
       await this.loadPage(pageId);
@@ -295,6 +335,7 @@ createApp({
       const r = await this.api('POST', '/api/ssl/create', {
         domain: this.ssl.createDomain.trim(),
         www: this.ssl.createWww,
+        email: this.ssl.createEmail.trim(),
         validationMethod: this.ssl.createMethod,
       });
       this.ssl.creating = false;
@@ -305,9 +346,10 @@ createApp({
         this.ssl.createResult = r.data;
         this.ssl.createDomain = '';
         this.ssl.createWww = false;
+        this.ssl.createEmail = '';
         await this.loadSSL();
-      } else if (r.status === 503) {
-        this.ssl.createError = { step: 'ACME client detection', cause: r.data.hint, consequence: 'Install certbot or win-acme first using the SSL Manager CLI.', nginxRunning: true };
+      } else if (r.status === 400) {
+        this.ssl.createError = { step: 'email configuration', cause: r.data.hint, consequence: 'Configure acmeEmail in settings or provide email.', nginxRunning: true };
       } else if (r.status === 409) {
         this.ssl.createError = { step: 'port 80 check', cause: r.data.detail, consequence: r.data.hint, nginxRunning: true };
       } else {
@@ -325,6 +367,7 @@ createApp({
         this.ssl.dnsWaiting = null;
         this.ssl.createDomain = '';
         this.ssl.createWww = false;
+        this.ssl.createEmail = '';
         await this.loadSSL();
       } else {
         this.ssl.createError = r.data.error || { step: 'DNS validation', cause: 'Certificate issuance failed after DNS confirmation.', consequence: 'No certificate was issued.' };
@@ -365,7 +408,7 @@ createApp({
       return 'neutral';
     },
 
-    // ── Domains ───────────────────────────────────────────────────────────────
+    // ── Domains ───────────────────────────────────────────────────────
     async loadDomains() {
       this.domains.loading = true;
       const r = await this.api('GET', '/api/domains');
@@ -373,9 +416,18 @@ createApp({
       if (r.ok) this.domains.list = r.data;
     },
 
-    toggleDomainForm() {
+    async toggleDomainForm() {
       if (this.domains.showForm && this.domains.dirty) {
-        if (!confirm('Discard unsaved changes?')) return;
+        const { isConfirmed } = await Swal.fire({
+          title: 'Unsaved changes',
+          text: 'Discard changes and close?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Discard',
+          cancelButtonText: 'Stay',
+          ...this.swalTheme,
+        });
+        if (!isConfirmed) return;
       }
       this.domains.showForm = !this.domains.showForm;
       if (!this.domains.showForm) {
@@ -403,11 +455,18 @@ createApp({
       };
     },
 
-    // T023: editDomain method
     async editDomain(name) {
-      // Check for unsaved changes
       if (this.domains.dirty && this.domains.showForm) {
-        if (!confirm('Discard unsaved changes?')) return;
+        const { isConfirmed } = await Swal.fire({
+          title: 'Unsaved changes',
+          text: 'Discard changes and edit this domain?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Discard',
+          cancelButtonText: 'Stay',
+          ...this.swalTheme,
+        });
+        if (!isConfirmed) return;
       }
 
       // Fetch domain data
@@ -430,6 +489,7 @@ createApp({
         backendHost: domain.backendHost || '127.0.0.1',
         upstreamType: domain.upstreamType || 'http',
         www: domain.www || false,
+        wildcard: domain.wildcard || false,
         ssl: {
           enabled: domain.ssl?.enabled || false,
           certPath: domain.ssl?.certPath || '',
@@ -512,14 +572,14 @@ createApp({
         this.domains.certDnsWaiting = r.data; // { domain, txtName, txtValue }
         // Stay in cert_missing section — show DNS waiting state
       } else if (r.ok) {
-        // Update cert paths in the form with what certbot actually wrote
+        // Update cert paths in the form with what was actually written
         this.domains.form.ssl.certPath = r.data.certPath;
         this.domains.form.ssl.keyPath = r.data.keyPath;
         this.domains.certMissing = null;
         // Retry the domain save now that the cert exists
         await this.saveDomain();
-      } else if (r.status === 503) {
-        this.domains.certCreateError = { step: 'ACME client detection', cause: r.data.hint, consequence: 'Install certbot or win-acme first.', nginxRunning: true };
+      } else if (r.status === 400) {
+        this.domains.certCreateError = { step: 'email configuration', cause: r.data.hint, consequence: 'Configure acmeEmail in settings.', nginxRunning: true };
       } else if (r.status === 409) {
         this.domains.certCreateError = { step: 'port 80 check', cause: r.data.detail, consequence: r.data.hint, nginxRunning: true };
       } else {
@@ -565,13 +625,51 @@ createApp({
     },
 
     async deleteDomain(name) {
-      if (!confirm(`Delete domain "${name}"? This cannot be undone.`)) return;
-      await this.api('DELETE', `/api/domains/${name}`);
+      const domain = this.domains.list.find(d => d.name === name);
+      const hasCert = domain?.ssl?.enabled;
+      const { isConfirmed, value: deleteCertChecked } = await Swal.fire({
+        title: `Delete "${name}"?`,
+        text: 'This cannot be undone.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel',
+        input: hasCert ? 'checkbox' : undefined,
+        inputValue: 0,
+        inputPlaceholder: 'Also delete SSL certificate files',
+        ...this.swalTheme,
+      });
+      if (!isConfirmed) return;
+      const deleteCert = hasCert && deleteCertChecked === 1;
+      await this.api('DELETE', `/api/domains/${name}${deleteCert ? '?deleteCert=true' : ''}`);
       await this.loadDomains();
     },
 
     async reloadDomain(name) {
       await this.api('POST', `/api/domains/${name}/reload`);
+    },
+
+    async toggleDomain(name) {
+      const domain = this.domains.list.find(d => d.name === name);
+      const isEnabled = domain?.enabled !== false;
+      const action = isEnabled ? 'disable' : 'enable';
+      const { isConfirmed } = await Swal.fire({
+        title: `${isEnabled ? 'Disable' : 'Enable'} "${name}"?`,
+        text: isEnabled
+          ? 'Nginx will stop serving this domain until re-enabled.'
+          : 'Nginx will resume serving this domain.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: isEnabled ? 'Disable' : 'Enable',
+        cancelButtonText: 'Cancel',
+        ...this.swalTheme,
+      });
+      if (!isConfirmed) return;
+      const r = await this.api('PUT', `/api/domains/${name}/toggle`);
+      if (!r.ok) {
+        await Swal.fire({ title: 'Error', text: r.data.error || `Failed to ${action} domain`, icon: 'error', ...this.swalTheme });
+      }
+      await this.loadDomains();
     },
 
     // T024: Auto-populate SSL paths when SSL is enabled
@@ -582,11 +680,11 @@ createApp({
           if (domain) {
             const platform = this.settings.platform;
             if (platform === 'win32') {
-              this.domains.form.ssl.certPath = `C:\\Certbot\\live\\${domain}\\fullchain.pem`;
-              this.domains.form.ssl.keyPath = `C:\\Certbot\\live\\${domain}\\privkey.pem`;
+              this.domains.form.ssl.certPath = `C:\\ssl\\${domain}\\fullchain.pem`;
+              this.domains.form.ssl.keyPath = `C:\\ssl\\${domain}\\privkey.pem`;
             } else {
-              this.domains.form.ssl.certPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
-              this.domains.form.ssl.keyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
+              this.domains.form.ssl.certPath = `/etc/easy-devops/ssl/${domain}/fullchain.pem`;
+              this.domains.form.ssl.keyPath = `/etc/easy-devops/ssl/${domain}/privkey.pem`;
             }
           }
         }
@@ -601,7 +699,8 @@ createApp({
       if (r.ok) {
         this.settings.dashboardPort = r.data.dashboardPort;
         this.settings.nginxDir = r.data.nginxDir;
-        this.settings.certbotDir = r.data.certbotDir;
+        this.settings.sslDir = r.data.sslDir;
+        this.settings.acmeEmail = r.data.acmeEmail || '';
         this.settings.platform = r.data.platform || 'linux'; // T022
       }
     },
@@ -611,7 +710,8 @@ createApp({
       const payload = {
         dashboardPort: this.settings.dashboardPort,
         nginxDir: this.settings.nginxDir,
-        certbotDir: this.settings.certbotDir,
+        sslDir: this.settings.sslDir,
+        acmeEmail: this.settings.acmeEmail,
       };
       if (this.settings.password) payload.dashboardPassword = this.settings.password;
       const r = await this.api('POST', '/api/settings', payload);

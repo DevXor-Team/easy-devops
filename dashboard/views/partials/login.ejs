@@ -1,50 +1,170 @@
+
 <!-- Login Page -->
-<div v-if="!authenticated" class="min-h-screen flex items-center justify-center p-4">
-  <div class="w-full max-w-md">
-    <div class="text-center mb-10">
-      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-400 to-brand-600 mb-4">
-        <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+<div
+  v-if="!authenticated"
+  style="
+    width: 100%;
+    flex: 1;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    background: var(--color-bg);
+  "
+>
+  <!-- Background Layers -->
+  <!-- Layer 1: Large slow orb -->
+  <div style="
+    position: absolute; width: 600px; height: 600px;
+    background: radial-gradient(circle, var(--color-primary) 0%, transparent 70%);
+    opacity: 0.12;
+    filter: blur(80px);
+    animation: float-orb1 12s ease-in-out infinite alternate;
+    top: -100px; left: -100px;
+    pointer-events: none;
+  "></div>
+
+  <!-- Layer 2: Second orb -->
+  <div style="
+    position: absolute; width: 400px; height: 400px;
+    background: radial-gradient(circle, var(--color-primary) 0%, transparent 70%);
+    opacity: 0.08;
+    filter: blur(60px);
+    animation: float-orb2 16s ease-in-out infinite alternate;
+    bottom: -80px; right: -80px;
+    pointer-events: none;
+  "></div>
+
+  <!-- Layer 3: Subtle grid/dot pattern overlay -->
+  <div style="
+    position: absolute; inset: 0;
+    opacity: 0.03;
+    background-image: radial-gradient(circle, white 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+  "></div>
+
+  <!-- Content Wrapper -->
+  <div style="
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    z-index: 10;
+  ">
+
+    <!-- Logo & Title Section -->
+    <div style="text-align: center; margin-bottom: 40px; animation: logo-enter 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;">
+      <div style="
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 72px; height: 72px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, var(--color-primary) 0%, rgba(0,0,0,0.5) 100%);
+        border: 1px solid rgba(255,255,255,0.15);
+        box-shadow:
+          0 0 0 1px rgba(var(--color-primary-rgb), 0.3),
+          0 0 30px rgba(var(--color-primary-rgb), 0.4),
+          0 0 60px rgba(var(--color-primary-rgb), 0.15);
+        transition: transform 300ms ease;
+      "
+      onmouseover="this.style.transform='rotate(10deg) scale(1.05)'"
+      onmouseout="this.style.transform='rotate(0deg) scale(1)'">
+        <!-- Lightning bolt SVG -->
+        <svg style="width: 32px; height: 32px; color: white;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       </div>
-      <h1 class="text-2xl font-bold text-white">Easy DevOps</h1>
-      <p class="text-slate-400 mt-2">Sign in to access your dashboard</p>
+      <h1 style="
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--color-text);
+        margin-top: 16px;
+        margin-bottom: 0;
+      ">Easy DevOps</h1>
+      <p style="
+        font-size: 13px;
+        color: var(--color-muted);
+        margin-top: 6px;
+        letter-spacing: 0.01em;
+        margin-bottom: 0;
+      ">Sign in to access your dashboard</p>
     </div>
 
-    <div class="card p-8">
-      <div class="space-y-5">
-        <div class="input-group">
-          <input v-model="login.password" type="password" placeholder=" " @keyup.enter="doLogin" />
-          <label>Password</label>
-        </div>
-
-        <p v-if="login.error" class="text-red-400 text-sm flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {{ login.error }}
-        </p>
-
-        <button @click="doLogin" :disabled="login.loading" class="btn btn-primary w-full">
-          <svg v-if="login.loading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-          </svg>
-          {{ login.loading ? 'Signing in...' : 'Sign In' }}
-        </button>
+    <!-- Login Card -->
+    <div class="login-card w-full text-left" style="animation: card-enter 500ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;">
+      <div class="mb-6">
+        <label class="login-label">Password</label>
+        <input v-model="login.password" type="password" class="login-input" placeholder="Enter dashboard password" @keyup.enter="doLogin" />
       </div>
 
-      <p class="text-center text-xs text-slate-500 mt-6">No password set? Leave blank and press Sign In.</p>
+      <div v-if="login.error" style="
+        padding: 12px; margin-bottom: 24px;
+        background: rgba(239, 68, 68, 0.1);
+        border-left: 3px solid #ef4444;
+        color: #ef4444;
+        font-size: 13px; font-weight: 600;
+        display: flex; align-items: center; gap: 8px;
+        border-radius: 10px;
+      ">
+        <svg style="width: 16px; height: 16px; flex-shrink: 0;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        {{ login.error }}
+      </div>
+
+      <button @click="doLogin" :disabled="login.loading" class="login-btn gap-2">
+        <svg v-if="login.loading" class="w-4 h-4 animate-spin inline-block -ml-1" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        {{ login.loading ? 'Signing in...' : 'Sign In' }}
+      </button>
+
+      <p style="
+        text-align: center; font-size: 12px; color: var(--color-muted);
+        margin-top: 24px; margin-bottom: 0; font-weight: 500;
+      ">No password set? Leave blank and press Sign In.</p>
     </div>
 
-    <button @click="toggleTheme" class="mx-auto mt-6 flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300 transition">
-      <svg v-if="isDark" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-      <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-      </svg>
-      {{ isDark ? 'Light mode' : 'Dark mode' }}
-    </button>
+    <!-- Bottom Theme Controls (Pill) -->
+    <div style="
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 999px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      margin-top: 32px;
+      animation: card-enter 700ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      opacity: 0;
+    ">
+      <button @click="toggleTheme" class="theme-toggle-btn">
+        <svg v-if="isDark" style="width: 14px; height: 14px;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+        <svg v-else style="width: 14px; height: 14px;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+        <!-- {{ isDark ? 'Light mode' : 'Dark mode' }} -->
+      </button>
+
+      <div style="width: 1px; height: 14px; background: rgba(255,255,255,0.15);"></div>
+
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button v-for="color in ['teal', 'violet', 'amber', 'rose', 'cyan']" :key="color"
+          @click="setAccent(color)"
+          class="theme-accent-circle"
+          :class="{ 'active': accent === color }"
+          :style="{
+            'background-color': color === 'teal' ? '#d64a29' : color === 'violet' ? '#7C3AED' : color === 'amber' ? '#D97706' : color === 'rose' ? '#E11D48' : '#0891B2',
+            'color': color === 'teal' ? '#0D9488' : color === 'violet' ? '#7C3AED' : color === 'amber' ? '#D97706' : color === 'rose' ? '#E11D48' : '#0891B2'
+          }"
+          title="Change accent">
+        </button>
+      </div>
+    </div>
   </div>
 </div>
