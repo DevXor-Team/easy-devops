@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="dashboard/public/img/icon.png" alt="Easy DevOps" width="100" />
+</p>
+
 # Easy DevOps
 
 [![npm version](https://badge.fury.io/js/easy-devops.svg)](https://badge.fury.io/js/easy-devops)
@@ -6,23 +10,25 @@
 
 A unified DevOps management tool with interactive CLI and web dashboard for managing **Nginx**, **SSL certificates**, and **Node.js** on Linux and Windows servers.
 
+No external ACME binaries required — SSL certificates are issued via [`acme-client`](https://www.npmjs.com/package/acme-client) (pure Node.js, Let's Encrypt).
+
 ## Features
 
 - **🖥️ Interactive CLI** — Arrow-key menus with real-time status indicators
-- **📊 Web Dashboard** — Modern Vue 3 interface with dark/light themes
-- **🌐 Nginx Management** — Start/stop/reload, config editor, error logs
-- **🔒 SSL Certificate Management** — Let's Encrypt via Certbot, expiry tracking
-- **🔗 Domain Management** — Reverse proxy configurations with SSL, WebSocket, gzip, rate limiting
-- **📦 Node.js Manager** — Version switching via nvm, global package management
+- **📊 Web Dashboard** — Modern Vue 3 interface with dark/light themes (`#161616` / `#d64a29` palette)
+- **🌐 Nginx Management** — Start/stop/reload, config editor, error logs, install
+- **🔒 SSL Certificate Management** — Let's Encrypt via `acme-client` (no certbot), HTTP-01 and DNS-01 challenges, wildcard certs, expiry tracking
+- **🔗 Domain Management** — Reverse proxy configs with SSL, external URL backends, enable/disable, wildcard domains, WebSocket, gzip, rate limiting
+- **📦 Node.js Manager** — Version switching via nvm / nvm-windows, global package management
 - **🔄 Real-time Updates** — Socket.io powered status updates in dashboard
 - **💿 SQLite Storage** — Persistent configuration via `good.db`
 
 ## Requirements
 
 - **Node.js 18+** (with npm)
-- **Linux** (Debian/Ubuntu) or **Windows**
-- ⚠️ **Windows users: PowerShell must be run as Administrator** (required for installing packages via winget, managing services, and SSL certificates)
-- Optional: Nginx, Certbot, nvm (installed separately or via the tool)
+- **Linux** (Debian/Ubuntu/etc.) or **Windows**
+- ⚠️ **Windows users: PowerShell must be run as Administrator** (required for managing services and SSL certificates)
+- Optional: Nginx, nvm (installed separately or via the tool)
 
 ## Installation
 
@@ -99,10 +105,10 @@ npx easy-devops
 
 ```
 ╔══════════════════════════════╗
-║      Easy DevOps v0.1.0     ║
+║      Easy DevOps v1.0.0     ║
 ╚══════════════════════════════╝
 
-nginx: ✅ v1.26.2 | certbot: ✅ v2.9.0 | node: v22.21.1
+nginx: ✅ v1.26.2 | node: v22.21.1
 
 ? Select an option:
   📦 Node.js Manager
@@ -150,13 +156,16 @@ Manage Nginx reverse proxy configurations from CLI or dashboard.
 
 | Option | Description |
 |--------|-------------|
-| List Domains | Show all configured domains in a table |
+| List Domains | Show all configured domains in a table (with status) |
 | Add Domain | Interactive prompts for domain configuration |
 | Edit Domain | Modify existing domain settings |
-| Delete Domain | Remove domain with confirmation |
+| Enable / Disable Domain | Toggle domain on/off without deleting config |
+| Delete Domain | Remove domain (with option to also delete SSL files) |
 
 **Domain Configuration Options:**
-- SSL/HTTPS with auto-renewal tracking
+- Backend: local host:port (`127.0.0.1:3000`) or full external URL (`https://app.vercel.app`)
+- Wildcard domain (`*.example.com`) — auto-enforces DNS-01 SSL validation
+- SSL/HTTPS with certificate management
 - WebSocket support (`ws` upstream type)
 - Gzip compression
 - Rate limiting (requests/second + burst)
@@ -168,7 +177,7 @@ Manage Nginx reverse proxy configurations from CLI or dashboard.
 
 ### SSL Manager
 
-Manage Let's Encrypt SSL certificates using Certbot.
+Issue and renew Let's Encrypt SSL certificates via `acme-client` — no certbot or external binaries required.
 
 | Status | Meaning |
 |--------|---------|
@@ -176,21 +185,28 @@ Manage Let's Encrypt SSL certificates using Certbot.
 | ⚠️ yellow | Expiring soon (10–30 days) |
 | ❌ red | Critical (< 10 days) |
 
-> **Note:** Renewing a certificate temporarily stops Nginx to free port 80, then restarts it automatically.
+#### Challenge Methods
 
-#### Windows Package Manager (winget)
+| Method | How it works |
+|--------|-------------|
+| **HTTP-01** | Easy DevOps stops nginx, binds port 80, serves the ACME token, then restarts nginx |
+| **DNS-01** | You add a `_acme-challenge` TXT record to your DNS; Easy DevOps waits for confirmation |
 
-Easy DevOps uses **winget** (Windows Package Manager) to install certbot and other packages on Windows. If winget is not installed, Easy DevOps will automatically prompt to install it using the [asheroto/winget-install](https://github.com/asheroto/winget-install) script.
+> **Wildcard certificates** (`*.example.com`) require DNS-01 — HTTP-01 is automatically disabled for wildcard domains.
 
-**Installing winget manually:**
+#### Certificate Storage
 
-If you prefer to install winget separately, you can:
+Certificates are stored under `sslDir` (configured in Settings):
 
-1. **Install from Microsoft Store:** Search for "App Installer" in the Microsoft Store
-2. **Use the winget-install script:** [https://github.com/asheroto/winget-install](https://github.com/asheroto/winget-install)
-3. **Official Microsoft documentation:** [https://learn.microsoft.com/en-us/windows/package-manager/winget/](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+```
+{sslDir}/{domain}/fullchain.pem
+{sslDir}/{domain}/privkey.pem
+{sslDir}/.account/account.key     ← ACME account key, reused across all issuances
+```
 
-> **Note:** The embedded `winget-install.ps1` script in this project is sourced from [asheroto/winget-install](https://github.com/asheroto/winget-install) — a community-maintained, reliable installer for winget on Windows Server and systems without the Microsoft Store.
+Default paths:
+- Linux: `/etc/easy-devops/ssl/`
+- Windows: `C:\easy-devops\ssl\`
 
 ---
 
@@ -239,8 +255,12 @@ The dashboard exposes RESTful API endpoints:
 | `/api/nginx/configs` | GET | List config files |
 | `/api/nginx/config/:file` | GET/POST | Read/write config file |
 | `/api/domains` | GET/POST | List/create domains |
-| `/api/domains/:name` | GET/PUT/DELETE | Domain CRUD |
+| `/api/domains/:name` | PUT/DELETE | Update/delete domain |
+| `/api/domains/:name/toggle` | PUT | Enable or disable domain |
+| `/api/domains/:name/reload` | POST | Reload nginx for domain |
 | `/api/ssl` | GET | List certificates |
+| `/api/ssl/create` | POST | Issue new certificate |
+| `/api/ssl/create-confirm` | POST | Confirm DNS challenge |
 | `/api/ssl/renew/:domain` | POST | Renew certificate |
 | `/api/settings` | GET/POST | Dashboard settings |
 
@@ -252,9 +272,19 @@ All configuration is stored in `data/easy-devops.sqlite`:
 
 | Key | Contents |
 |-----|----------|
-| `config` | Dashboard port, password, Nginx/Certbot directories |
-| `system-detection` | Cached system info (OS, Node, nginx, certbot) |
+| `config` | Dashboard port, password, `nginxDir`, `sslDir`, `acmeEmail` |
+| `system-detection` | Cached system info (OS, Node, nginx) |
 | `domains` | Array of domain configurations |
+
+**Config fields:**
+
+| Field | Default (Linux) | Default (Windows) | Description |
+|-------|-----------------|-------------------|-------------|
+| `dashboardPort` | `3000` | `3000` | Dashboard HTTP port |
+| `dashboardPassword` | `admin` | `admin` | Dashboard login password |
+| `nginxDir` | `/etc/nginx` | `C:\nginx` | Nginx installation directory |
+| `sslDir` | `/etc/easy-devops/ssl` | `C:\easy-devops\ssl` | SSL certificate storage root |
+| `acmeEmail` | _(empty)_ | _(empty)_ | Email for Let's Encrypt account (**required** for cert issuance) |
 
 ---
 
@@ -264,27 +294,28 @@ All configuration is stored in `data/easy-devops.sqlite`:
 easy-devops/
 ├── cli/
 │   ├── index.js          # CLI entry point
-│   ├── managers/         # Business logic modules
-│   └── menus/            # Menu dispatcher stubs
+│   ├── managers/         # Domain, Nginx, SSL, Node.js logic
+│   └── menus/            # Thin menu dispatcher wrappers
 ├── core/
-│   ├── config.js         # Configuration loader
-│   ├── db.js             # SQLite database (good.db)
+│   ├── config.js         # Configuration load/save
+│   ├── db.js             # SQLite helpers (good.db)
 │   ├── detector.js       # System environment detection
+│   ├── nginx-conf-generator.js  # Nginx conf builder (shared)
+│   ├── platform.js       # isWindows, nginx cmd helpers, combineOutput
 │   ├── shell.js          # Cross-platform shell executor
-│   └── nginx-conf-generator.js  # Nginx config file generator
+│   └── validators.js     # Shared input validation helpers
 ├── dashboard/
 │   ├── server.js         # Express + Socket.io server
-│   ├── routes/           # API endpoints
-│   ├── lib/              # Service helpers
-│   ├── views/            # EJS templates
-│   └── public/           # Static assets (Vue app)
+│   ├── routes/           # auth, domains, nginx, settings, ssl
+│   ├── lib/              # cert-reader, domains-db, nginx-service
+│   ├── views/            # EJS templates + partials
+│   └── public/           # Static assets (Vue 3 app)
 ├── data/
 │   └── easy-devops.sqlite
-└── lib/
-    └── installer/
-        ├── install.ps1   # Windows bootstrap installer
-        ├── install.sh    # Linux/macOS bootstrap installer
-        └── winget-install.ps1  # Windows Package Manager installer
+├── lib/
+│   └── installer/        # Bash helper modules for install.sh
+├── install.sh            # Linux/macOS bootstrap installer
+└── install.ps1           # Windows PowerShell installer
 ```
 
 ---
@@ -296,9 +327,11 @@ easy-devops/
 | CLI Interface | ✅ | ✅ |
 | Web Dashboard | ✅ | ✅ |
 | Nginx Management | ✅ | ✅ |
-| SSL (Certbot) | ✅ | ✅ |
+| SSL — HTTP-01 (acme-client) | ✅ | ✅ |
+| SSL — DNS-01 (acme-client) | ✅ | ✅ |
+| Wildcard Certificates | ✅ | ✅ |
 | Node.js (nvm) | ✅ | ✅ (nvm-windows) |
-| System Service | systemd | Task Scheduler |
+| Nginx service control | systemctl | nginx.exe direct |
 
 ---
 
@@ -331,6 +364,12 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for a full history of changes.
 
 ---
 

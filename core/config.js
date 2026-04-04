@@ -14,7 +14,7 @@ const DEFAULTS = {
   },
   win32: {
     nginxDir: 'C:\\nginx',
-    sslDir: 'C:\\ssl',
+    sslDir: 'C:\\easy-devops\\ssl',
     dashboardPort: 6443,
     dashboardPassword: '',
     acmeEmail: '',

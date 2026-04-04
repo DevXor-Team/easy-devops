@@ -680,8 +680,8 @@ createApp({
           if (domain) {
             const platform = this.settings.platform;
             if (platform === 'win32') {
-              this.domains.form.ssl.certPath = `C:\\ssl\\${domain}\\fullchain.pem`;
-              this.domains.form.ssl.keyPath = `C:\\ssl\\${domain}\\privkey.pem`;
+              this.domains.form.ssl.certPath = `C:\\easy-devops\\ssl\\${domain}\\fullchain.pem`;
+              this.domains.form.ssl.keyPath = `C:\\easy-devops\\ssl\\${domain}\\privkey.pem`;
             } else {
               this.domains.form.ssl.certPath = `/etc/easy-devops/ssl/${domain}/fullchain.pem`;
               this.domains.form.ssl.keyPath = `/etc/easy-devops/ssl/${domain}/privkey.pem`;

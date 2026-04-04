@@ -397,8 +397,8 @@ export async function generateConf(domain) {
 export function getDefaultCertPaths(domainName, platform, sslDir) {
   if (platform === 'win32') {
     return {
-      certPath: `C:\\ssl\\${domainName}\\fullchain.pem`,
-      keyPath: `C:\\ssl\\${domainName}\\privkey.pem`,
+      certPath: `C:\\easy-devops\\ssl\\${domainName}\\fullchain.pem`,
+      keyPath: `C:\\easy-devops\\ssl\\${domainName}\\privkey.pem`,
     };
   }
   return {

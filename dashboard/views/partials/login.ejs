@@ -64,20 +64,17 @@
         display: inline-flex; align-items: center; justify-content: center;
         width: 72px; height: 72px;
         border-radius: 18px;
-        background: linear-gradient(135deg, var(--color-primary) 0%, rgba(0,0,0,0.5) 100%);
-        border: 1px solid rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.10);
         box-shadow:
-          0 0 0 1px rgba(var(--color-primary-rgb), 0.3),
-          0 0 30px rgba(var(--color-primary-rgb), 0.4),
-          0 0 60px rgba(var(--color-primary-rgb), 0.15);
+          0 0 0 1px rgba(var(--color-primary-rgb), 0.2),
+          0 0 30px rgba(var(--color-primary-rgb), 0.25),
+          0 0 60px rgba(var(--color-primary-rgb), 0.10);
         transition: transform 300ms ease;
+        overflow: hidden;
       "
-      onmouseover="this.style.transform='rotate(10deg) scale(1.05)'"
-      onmouseout="this.style.transform='rotate(0deg) scale(1)'">
-        <!-- Lightning bolt SVG -->
-        <svg style="width: 32px; height: 32px; color: white;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
+      onmouseover="this.style.transform='scale(1.05)'"
+      onmouseout="this.style.transform='scale(1)'">
+        <img src="/img/icon.png" alt="Easy DevOps" style="width: 72px; height: 72px; object-fit: contain;" />
       </div>
       <h1 style="
         font-size: 26px;

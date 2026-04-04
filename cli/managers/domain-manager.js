@@ -130,10 +130,10 @@ async function addDomainAction() {
     const { nginxDir, sslDir } = loadConfig();
     const platform = isWindows ? 'win32' : 'linux';
     const defaultCertPath = platform === 'win32'
-      ? `C:\\ssl\\${basic.name}\\fullchain.pem`
+      ? `C:\\easy-devops\\ssl\\${basic.name}\\fullchain.pem`
       : `${sslDir}/${basic.name}/fullchain.pem`;
     const defaultKeyPath = platform === 'win32'
-      ? `C:\\ssl\\${basic.name}\\privkey.pem`
+      ? `C:\\easy-devops\\ssl\\${basic.name}\\privkey.pem`
       : `${sslDir}/${basic.name}/privkey.pem`;
 
     const sslDetails = await inquirer.prompt([
