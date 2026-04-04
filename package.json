@@ -6,7 +6,7 @@
     "devops",
     "nginx",
     "ssl",
-    "certbot",
+    "acme",
     "letsencrypt",
     "nodejs",
     "dashboard",
@@ -41,7 +41,7 @@
     "dashboard/",
     "lib/",
     "data/.gitkeep",
-    "install.bat",
+"install.bat",
     "install.ps1",
     "install.sh"
   ],
