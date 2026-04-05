@@ -64,6 +64,7 @@ createApp({
         configs: [], selectedConfig: '',
         configContent: '', configSaving: false, configMsg: '',
         logs: [], logsLoading: false,
+        configDropdownOpen: false,
       },
 
       ssl: {
@@ -80,6 +81,7 @@ createApp({
       domains: {
         list: [], loading: false, error: '',
         showForm: false,
+        upstreamTypeOpen: false,
         editingName: null, // T017: null = adding, string = editing
         saving: false,
         dirty: false, // T019: Track unsaved changes
@@ -720,4 +722,14 @@ createApp({
       else { this.settings.error = r.data.error || 'Save failed'; }
     },
   },
-}).mount('#app');
+})
+.directive('click-outside', {
+  mounted(el, binding) {
+    el._clickOutside = (e) => { if (!el.contains(e.target)) binding.value(e); };
+    document.addEventListener('mousedown', el._clickOutside);
+  },
+  unmounted(el) {
+    document.removeEventListener('mousedown', el._clickOutside);
+  },
+})
+.mount('#app');

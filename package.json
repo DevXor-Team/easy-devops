@@ -30,26 +30,23 @@
   },
   "homepage": "https://github.com/omar00050/Easy-DevOps#readme",
   "type": "module",
-  "main": "cli/index.js",
+  "main": "src/cli/index.js",
   "bin": {
-    "easy-devops": "cli/index.js",
-    "ezz": "cli/index.js"
+    "easy-devops": "src/cli/index.js",
+    "ezz": "src/cli/index.js"
   },
   "files": [
-    "cli/",
-    "core/",
-    "dashboard/",
-    "lib/",
+    "src/",
     "data/.gitkeep",
-"install.bat",
+    "install.bat",
     "install.ps1",
     "install.sh"
   ],
   "scripts": {
-    "start": "node cli/index.js",
+    "start": "node src/cli/index.js",
     "test": "echo \" no test specified\"",
-    "dashboard": "node dashboard/server.js",
-    "system-info": "node cli/index.js system-info"
+    "dashboard": "node src/dashboard/server.js",
+    "system-info": "node src/cli/index.js system-info"
   },
   "engines": {
     "node": ">=18.0.0"

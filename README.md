@@ -284,7 +284,7 @@ All configuration is stored in `data/easy-devops.sqlite`:
 
 | Field | Default (Linux) | Default (Windows) | Description |
 |-------|-----------------|-------------------|-------------|
-| `dashboardPort` | `3000` | `3000` | Dashboard HTTP port |
+| `dashboardPort` | `6443` | `6443` | Dashboard HTTP port |
 | `dashboardPassword` | `admin` | `admin` | Dashboard login password |
 | `nginxDir` | `/etc/nginx` | `C:\nginx` | Nginx installation directory |
 | `sslDir` | `/etc/easy-devops/ssl` | `C:\easy-devops\ssl` | SSL certificate storage root |
@@ -296,28 +296,29 @@ All configuration is stored in `data/easy-devops.sqlite`:
 
 ```
 easy-devops/
-├── cli/
-│   ├── index.js          # CLI entry point
-│   ├── managers/         # Domain, Nginx, SSL, Node.js logic
-│   └── menus/            # Thin menu dispatcher wrappers
-├── core/
-│   ├── config.js         # Configuration load/save
-│   ├── db.js             # SQLite helpers (good.db)
-│   ├── detector.js       # System environment detection
-│   ├── nginx-conf-generator.js  # Nginx conf builder (shared)
-│   ├── platform.js       # isWindows, nginx cmd helpers, combineOutput
-│   ├── shell.js          # Cross-platform shell executor
-│   └── validators.js     # Shared input validation helpers
-├── dashboard/
-│   ├── server.js         # Express + Socket.io server
-│   ├── routes/           # auth, domains, nginx, settings, ssl
-│   ├── lib/              # cert-reader, domains-db, nginx-service
-│   ├── views/            # EJS templates + partials
-│   └── public/           # Static assets (Vue 3 app)
+├── src/
+│   ├── cli/
+│   │   ├── index.js          # CLI entry point
+│   │   ├── managers/         # Domain, Nginx, SSL, Node.js logic
+│   │   └── menus/            # Thin menu dispatcher wrappers
+│   ├── core/
+│   │   ├── config.js         # Configuration load/save
+│   │   ├── db.js             # SQLite helpers (good.db)
+│   │   ├── detector.js       # System environment detection
+│   │   ├── nginx-conf-generator.js  # Nginx conf builder (shared)
+│   │   ├── platform.js       # isWindows, nginx cmd helpers, combineOutput
+│   │   ├── shell.js          # Cross-platform shell executor
+│   │   └── validators.js     # Shared input validation helpers
+│   ├── dashboard/
+│   │   ├── server.js         # Express + Socket.io server
+│   │   ├── routes/           # auth, domains, nginx, settings, ssl
+│   │   ├── lib/              # cert-reader, domains-db, nginx-service
+│   │   ├── views/            # EJS templates + partials
+│   │   └── public/           # Static assets (Vue 3 app)
+│   └── lib/
+│       └── installer/        # Bash helper modules for install.sh
 ├── data/
 │   └── easy-devops.sqlite
-├── lib/
-│   └── installer/        # Bash helper modules for install.sh
 ├── install.sh            # Linux/macOS bootstrap installer
 └── install.ps1           # Windows PowerShell installer
 ```

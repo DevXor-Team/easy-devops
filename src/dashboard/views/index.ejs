@@ -119,18 +119,119 @@ border-radius: 10px;
 transition: border-color 200ms, box-shadow 200ms, background 200ms;
 outline: none;
 }
+.form-input::placeholder {
+color: var(--color-muted);
+opacity: 0.55;
+}
+.form-input:hover:not(:focus):not(:disabled) {
+border-color: rgba(var(--color-primary-rgb), 0.35);
+}
 .form-input:focus {
 background: rgba(var(--color-primary-rgb), 0.05);
 border-color: var(--color-primary);
 box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
 }
+.form-input:disabled {
+opacity: 0.45;
+cursor: not-allowed;
+}
 
-select.form-input {
-appearance: none;
-background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-background-repeat: no-repeat;
-background-position: right 14px center;
-background-size: 16px;
+/* ── Custom Select (cselect) ── */
+.cselect {
+position: relative;
+min-width: 200px;
+user-select: none;
+}
+.cselect__trigger {
+width: 100%;
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 10px;
+padding: 9px 12px;
+background: var(--color-input);
+border: 1px solid var(--color-border);
+border-radius: 10px;
+color: var(--color-text);
+font-size: 13px;
+cursor: pointer;
+text-align: left;
+transition: border-color 150ms, box-shadow 150ms, background 150ms;
+outline: none;
+}
+.cselect__trigger:hover {
+border-color: rgba(var(--color-primary-rgb), 0.45);
+}
+.cselect--open .cselect__trigger {
+border-color: var(--color-primary);
+background: rgba(var(--color-primary-rgb), 0.04);
+box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+}
+.cselect__arrow {
+width: 15px;
+height: 15px;
+flex-shrink: 0;
+color: var(--color-muted);
+transition: transform 200ms ease, color 200ms ease;
+}
+.cselect--open .cselect__arrow {
+transform: rotate(180deg);
+color: var(--color-primary);
+}
+.cselect__panel {
+position: absolute;
+top: calc(100% + 6px);
+left: 0;
+right: 0;
+background: var(--color-surface);
+border: 1px solid var(--color-border);
+border-radius: 12px;
+box-shadow: 0 12px 32px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.15);
+z-index: 200;
+overflow: hidden;
+padding: 5px;
+max-height: 240px;
+overflow-y: auto;
+}
+.cselect__panel::-webkit-scrollbar { width: 4px; }
+.cselect__panel::-webkit-scrollbar-track { background: transparent; }
+.cselect__panel::-webkit-scrollbar-thumb { background: rgba(var(--color-primary-rgb), 0.3); border-radius: 9999px; }
+.cselect__option {
+width: 100%;
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 8px 10px;
+border-radius: 8px;
+color: var(--color-muted);
+font-size: 13px;
+cursor: pointer;
+background: none;
+border: none;
+text-align: left;
+transition: background 100ms, color 100ms;
+}
+.cselect__option:hover {
+background: rgba(var(--color-primary-rgb), 0.08);
+color: var(--color-text);
+}
+.cselect__option--active {
+color: var(--color-primary);
+background: rgba(var(--color-primary-rgb), 0.07);
+font-weight: 600;
+}
+.cselect__empty {
+padding: 12px 10px;
+font-size: 12px;
+color: var(--color-muted);
+text-align: center;
+font-style: italic;
+}
+.cselect__dot {
+width: 7px;
+height: 7px;
+border-radius: 50%;
+flex-shrink: 0;
 }
 
 /* Buttons */
@@ -210,7 +311,7 @@ border-radius: 20px;
 overflow: hidden;
 border: 1px solid var(--color-border);
 box-shadow: 0 40px 100px rgba(0,0,0,0.5), 0 16px 40px rgba(0,0,0,0.3);
-max-height: 90vh;
+max-height: min(90vh, calc(100dvh - 3rem));
 position: relative;
 background: var(--color-surface);
 }
@@ -482,6 +583,9 @@ box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px currentColor;
 <body class="font-sans antialiased text-[14px]">
 
 <div id="app" v-cloak class="min-h-screen flex text-foreground bg-background relative z-0">
+<!-- Domain Form Modal — mounted at app root to avoid stacking context / overflow clipping issues -->
+<%- include('partials/domain-form.ejs') %>
+
 <!-- Login partial -->
 <%- include('partials/login.ejs') %>
 

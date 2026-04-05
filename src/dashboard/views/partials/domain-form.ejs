@@ -3,7 +3,7 @@
 <div v-if="domains.showForm" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 modal-overlay">
 
 <!-- Modal Card -->
-<div class="relative w-full max-w-4xl max-h-full flex flex-col modal-card">
+<div class="relative w-full max-w-4xl flex flex-col modal-card">
 
 <!-- Modal Header -->
 <div class="flex items-center justify-between p-5 border-b border-border shrink-0" style="background: rgba(0,0,0,0.1)">
@@ -83,7 +83,7 @@
 </div>
 
 <!-- Modal Body (Scrollable) -->
-<div class="flex-1 overflow-y-auto w-full flex flex-col pb-6 rounded-b-[20px] bg-transparent">
+<div class="flex-1 min-h-0 overflow-y-auto w-full flex flex-col pb-6 rounded-b-[20px] bg-transparent">
 
 <!-- Accordion Section: Basic -->
 <div class="border-b border-border">
@@ -111,11 +111,34 @@
 
 <div class="w-full">
 <label class="form-label">Upstream Type</label>
-<select v-model="domains.form.upstreamType" class="form-input">
-<option value="http">HTTP</option>
-<option value="https">HTTPS</option>
-<option value="ws">WebSocket</option>
-</select>
+<div class="cselect" :class="{ 'cselect--open': domains.upstreamTypeOpen }"
+  v-click-outside="() => domains.upstreamTypeOpen = false">
+  <button type="button" class="cselect__trigger"
+    @click="domains.upstreamTypeOpen = !domains.upstreamTypeOpen">
+    <span class="flex items-center gap-2">
+      <span class="cselect__dot"
+        :style="{ background: domains.form.upstreamType === 'http' ? '#3b82f6' : domains.form.upstreamType === 'https' ? '#22c55e' : '#a855f7' }">
+      </span>
+      {{ domains.form.upstreamType === 'http' ? 'HTTP' : domains.form.upstreamType === 'https' ? 'HTTPS' : 'WebSocket' }}
+    </span>
+    <svg class="cselect__arrow" viewBox="0 0 20 20" fill="currentColor">
+      <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+    </svg>
+  </button>
+  <div class="cselect__panel" v-show="domains.upstreamTypeOpen">
+    <button v-for="opt in [{v:'http',l:'HTTP',c:'#3b82f6'},{v:'https',l:'HTTPS',c:'#22c55e'},{v:'ws',l:'WebSocket',c:'#a855f7'}]"
+      :key="opt.v" type="button"
+      class="cselect__option"
+      :class="{ 'cselect__option--active': domains.form.upstreamType === opt.v }"
+      @mousedown.prevent="domains.form.upstreamType = opt.v; domains.upstreamTypeOpen = false">
+      <span class="cselect__dot" :style="{ background: opt.c }"></span>
+      <span>{{ opt.l }}</span>
+      <svg v-if="domains.form.upstreamType === opt.v" class="w-3.5 h-3.5 shrink-0 ml-auto" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+      </svg>
+    </button>
+  </div>
+</div>
 </div>
 
 <div class="flex items-center justify-between p-4 bg-black/10 dark:bg-black/20 border border-border w-full md:col-span-2 rounded-[12px]">

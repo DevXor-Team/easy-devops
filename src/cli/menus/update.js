@@ -27,7 +27,7 @@ import { getDashboardStatus, startDashboard, stopDashboard } from './dashboard.j
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require   = createRequire(import.meta.url);
-const { version: currentVersion } = require('../../package.json');
+const { version: currentVersion } = require('../../../package.json');
 
 // ─── Version helpers ──────────────────────────────────────────────────────────
 

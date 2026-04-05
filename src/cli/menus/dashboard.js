@@ -14,7 +14,7 @@ import { run } from '../../core/shell.js';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const isWindows  = process.platform === 'win32';
-const LOG_PATH   = path.resolve(__dirname, '../../data/dashboard.log');
+const LOG_PATH   = path.resolve(__dirname, '../../../data/dashboard.log');
 const SERVER_PATH = path.resolve(__dirname, '../../dashboard/server.js');
 
 // ─── Port helpers ─────────────────────────────────────────────────────────────
