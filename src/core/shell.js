@@ -9,6 +9,7 @@
  *   - getShell()              — Returns OS-resolved shell descriptor { shell, flag }
  *   - run(cmd, options)       — Executes a command and captures output; never throws
  *   - runLive(cmd, options)   — Executes a command, streaming output to the terminal; never throws
+ *   - runInteractive(cmd, options) — Executes a command with full stdio inheritance (Linux only); never throws
  *
  * CommandResult shape (returned by run()):
  *   { success: boolean, stdout: string, stderr: string, exitCode: number|null, command: string }
@@ -146,6 +147,41 @@ export function runLive(cmd, options = {}) {
         process.stderr.write(err.message);
       }
       resolve(null);
+    });
+  });
+}
+
+// ─── runInteractive ───────────────────────────────────────────────────────────
+
+/**
+ * Executes a shell command with full stdio inheritance (stdin/stdout/stderr all
+ * pass through to the terminal). Intended for Linux-only interactive commands
+ * such as `sudo -v` that need to read a password from the user.
+ *
+ * Never throws.
+ *
+ * @param {string} cmd - The command string to execute.
+ * @param {{ cwd?: string }} [options]
+ * @param {string} [options.cwd=process.cwd()] - Working directory for the child process.
+ * @returns {Promise<{ success: boolean, exitCode: number|null }>}
+ */
+export function runInteractive(cmd, options = {}) {
+  const { cwd = process.cwd() } = options;
+  const { shell, flag } = getShell();
+
+  return new Promise((resolve) => {
+    const child = spawn(shell, [flag, cmd], {
+      cwd,
+      stdio: 'inherit',
+      windowsHide: true,
+    });
+
+    child.on('close', (exitCode) => {
+      resolve({ success: exitCode === 0, exitCode });
+    });
+
+    child.on('error', (err) => {
+      resolve({ success: false, exitCode: null });
     });
   });
 }

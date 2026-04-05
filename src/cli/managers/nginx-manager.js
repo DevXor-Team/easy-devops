@@ -13,7 +13,7 @@
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import ora from 'ora';
-import { run, runLive } from '../../core/shell.js';
+import { run, runLive, runInteractive } from '../../core/shell.js';
 import { loadConfig } from '../../core/config.js';
 import { ensureNginxInclude } from '../../core/nginx-conf-generator.js';
 import { isWindows } from '../../core/platform.js';
@@ -251,6 +251,15 @@ async function stopNginx(nginxDir) {
 
 async function installNginx() {
   if (!isWindows) {
+    console.log(chalk.yellow('\n sudo password required to install nginx.\n'));
+
+    const auth = await runInteractive('sudo -v');
+
+    if (!auth.success) {
+      console.log(chalk.red(' sudo authentication failed.'));
+      return { success: false, message: 'sudo authentication failed', output: auth.stderr };
+    }
+
     const spinner = ora('Installing nginx…').start();
     const result = await run('sudo apt-get install -y nginx', { timeout: 120000 });
     if (result.success) {

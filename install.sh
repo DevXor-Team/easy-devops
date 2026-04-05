@@ -487,7 +487,9 @@ printf '\n'
 
 if [ "$_allOK" = "true" ]; then
   printf '  All steps completed successfully!\n\n'
-  printf '  Run the CLI:\n'
+  printf '  To use immediately in this terminal, run:\n'
+  printf '    source ~/.bashrc\n\n'
+  printf '  Or open a new terminal, then run:\n'
   printf '    easy-devops\n'
 else
   printf '  Some steps need attention -- see warnings above.\n\n'
@@ -495,4 +497,25 @@ else
   printf '    node cli/index.js\n'
 fi
 printf '\n'
+
+# ---------------------------------------------------------------------------
+# Source nvm into the current session so node/npm/easy-devops work immediately
+# (only when nvm was actually used, i.e. NODE_ACTION != "keep")
+# ---------------------------------------------------------------------------
+if [ "$NODE_ACTION" != "keep" ]; then
+  export NVM_DIR="$HOME/.nvm"
+  if [ -s "$NVM_DIR/nvm.sh" ]; then
+    . "$NVM_DIR/nvm.sh"
+  fi
+
+  # Also source shell config to pick up PATH changes
+  if [ -f "$HOME/.bashrc" ]; then
+    . "$HOME/.bashrc" 2>/dev/null || true
+  elif [ -f "$HOME/.bash_profile" ]; then
+    . "$HOME/.bash_profile" 2>/dev/null || true
+  elif [ -f "$HOME/.zshrc" ]; then
+    . "$HOME/.zshrc" 2>/dev/null || true
+  fi
+fi
+
 exit 0
