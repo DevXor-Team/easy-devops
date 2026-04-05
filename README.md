@@ -45,13 +45,13 @@ If you **don't have Node.js** yet, use the bootstrap installer:
 #### Linux / macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/omar00050/Easy-DevOps/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/omar00050/Easy-DevOps/main/install.sh -o install.sh && bash install.sh
 ```
 
 Or with wget:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/omar00050/Easy-DevOps/main/install.sh | bash
+wget -qO install.sh https://raw.githubusercontent.com/omar00050/Easy-DevOps/main/install.sh && bash install.sh
 ```
 
 #### Windows (PowerShell)

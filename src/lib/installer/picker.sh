@@ -101,7 +101,7 @@ _pick_tty() {
     fi
 
     local ch seq1 seq2
-    IFS= read -r -n1 ch 2>/dev/null || ch=""
+    IFS= read -r -n1 ch < /dev/tty 2>/dev/null || ch=""
 
     # Check flag again after read (signal may have arrived during read)
     if [ "$_cancelled" = "true" ]; then
@@ -109,8 +109,8 @@ _pick_tty() {
     fi
 
     if [ "$ch" = $'\x1b' ]; then
-      IFS= read -r -n1 -t 0.1 seq1 2>/dev/null || seq1=""
-      IFS= read -r -n1 -t 0.1 seq2 2>/dev/null || seq2=""
+      IFS= read -r -n1 -t 0.1 seq1 < /dev/tty 2>/dev/null || seq1=""
+      IFS= read -r -n1 -t 0.1 seq2 < /dev/tty 2>/dev/null || seq2=""
       if [ "$seq1" = "[" ]; then
         case "$seq2" in
           A) [ "$selected" -gt 0 ] && selected=$(( selected - 1 )) ;;
@@ -164,7 +164,7 @@ _pick_numbered() {
   local choice
   while true; do
     printf 'Enter number (1-%d), or q to quit: ' "$count"
-    IFS= read -r choice
+    IFS= read -r choice < /dev/tty
     if [ "$choice" = "q" ] || [ "$choice" = "Q" ]; then
       return 2
     fi

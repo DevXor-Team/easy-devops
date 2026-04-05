@@ -19,7 +19,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Resolve script and project directory
 # ---------------------------------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 EASYDEVOPS_DIR="${EASYDEVOPS_DIR:-$SCRIPT_DIR}"
 
 # ---------------------------------------------------------------------------
@@ -303,7 +303,7 @@ else
     local_choice=""
     while true; do
       printf 'Enter 1, 2, or 3 (q to quit): '
-      IFS= read -r local_choice
+      IFS= read -r local_choice < /dev/tty
       case "$local_choice" in
         1)
           NODE_ACTION="keep"
