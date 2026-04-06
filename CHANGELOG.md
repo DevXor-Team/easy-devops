@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0] — 2026-04-06
+
+### Fixed
+
+#### Database no longer wiped on npm update
+- **Root cause:** `data/easy-devops.sqlite` was stored inside the npm package directory (`src/core/../../data/`). When running `npm install -g easy-devops` to update, npm replaces the entire package folder, deleting the database and all user configuration (domains, passwords, paths, ACME email).
+- **Fix:** The database is now stored in a persistent user-level directory that npm never touches:
+  - **Linux/macOS:** `~/.config/easy-devops/easy-devops.sqlite`
+  - **Windows:** `%APPDATA%\easy-devops\easy-devops.sqlite`
+- **Migration:** On first run after updating, Easy DevOps automatically detects an existing database at the old package-relative location and copies it to the new path. The old file is renamed to `easy-devops.sqlite.migrated` so the migration only runs once. No manual action required.
+
+### Changed
+
+- `core/db.js` — `DATA_DIR` now resolves to the user home config directory instead of the package-relative `data/` folder. `os` module imported for cross-platform home directory detection.
+
+---
+
 ## [1.0.2] — 2026-04-05
 
 ### Fixed

@@ -752,11 +752,11 @@ if ($allOK) {
   Write-Host "  All steps completed successfully!" -ForegroundColor Green
   Write-Host ""
   Write-Host "  Run the CLI:" -ForegroundColor White
-  Write-Host "    easy-devops" -ForegroundColor Cyan
+  Write-Host "    easy-devops or ezz" -ForegroundColor Cyan
 } else {
   Write-Host "  Some steps need attention -- see warnings above." -ForegroundColor Yellow
   Write-Host ""
   Write-Host "  Fallback:" -ForegroundColor White
-  Write-Host "    node cli/index.js" -ForegroundColor Cyan
+  Write-Host "    node src/cli/index.js" -ForegroundColor Cyan
 }
 Write-Host ""

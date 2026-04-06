@@ -12,6 +12,8 @@ A unified DevOps management tool with interactive CLI and web dashboard for mana
 
 No external ACME binaries required — SSL certificates are issued via [`acme-client`](https://www.npmjs.com/package/acme-client) (pure Node.js, Let's Encrypt).
 
+> **Tip:** Two CLI commands are available: **`easy-devops`** (full name) and **`ezz`** (short alias). Both are registered in the npm bin and do exactly the same thing.
+
 ## Features
 
 - **🖥️ Interactive CLI** — Arrow-key menus with real-time status indicators
@@ -38,6 +40,7 @@ If you have **Node.js 18+** installed, run:
 
 ```bash
 npm install -g easy-devops && easy-devops
+# Short alias also available: ezz
 ```
 
 If you **don't have Node.js** yet, use the bootstrap installer:
@@ -77,7 +80,7 @@ powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://raw
 
 ```bash
 npm install -g easy-devops
-easy-devops
+easy-devops   # or: ezz
 ```
 
 ### From Source
@@ -86,7 +89,7 @@ easy-devops
 git clone https://github.com/omar00050/Easy-DevOps.git
 cd Easy-DevOps
 npm install
-npm start
+npm start          # or: easy-devops / ezz
 ```
 
 ## Quick Start
@@ -95,7 +98,10 @@ npm start
 # Start the interactive CLI
 easy-devops
 
-# Or run directly
+# Short alias — same thing, faster to type
+ezz
+
+# Or run without installing
 npx easy-devops
 ```
 
@@ -276,7 +282,11 @@ The dashboard exposes RESTful API endpoints:
 
 ## Configuration
 
-All configuration is stored in `data/easy-devops.sqlite`:
+All configuration is stored in a persistent user directory (never inside the npm package, so it survives updates):
+
+**Database location:**
+- Linux/macOS: `~/.config/easy-devops/easy-devops.sqlite`
+- Windows: `%APPDATA%\easy-devops\easy-devops.sqlite`
 
 | Key | Contents |
 |-----|----------|
@@ -353,7 +363,7 @@ cd Easy-DevOps
 npm install
 
 # Run CLI
-npm start
+npm start          # or: easy-devops / ezz
 
 # Run dashboard
 npm run dashboard
