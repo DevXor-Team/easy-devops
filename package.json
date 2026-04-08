@@ -57,6 +57,7 @@
     "cli-table3": "^0.6.5",
     "ejs": "^5.0.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
     "express-session": "^1.17.3",
     "good.db": "^2.4.6",
     "inquirer": "^9.2.12",

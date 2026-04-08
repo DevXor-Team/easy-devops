@@ -1,9 +1,18 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { loadConfig } from '../../core/config.js';
 
 const router = Router();
 
-router.post('/login', (req, res) => {
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Too many login attempts. Try again in 15 minutes.' },
+});
+
+router.post('/login', loginLimiter, (req, res) => {
   const { password } = req.body;
   const { dashboardPassword } = loadConfig();
   if (password === dashboardPassword) {

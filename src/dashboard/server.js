@@ -2,9 +2,11 @@ import { createServer } from 'http';
 import express from 'express';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import crypto from 'crypto';
 import session from 'express-session';
 import { Server as SocketIO } from 'socket.io';
 import { loadConfig } from '../core/config.js';
+import { dbGet, dbSet } from '../core/db.js';
 import authRouter from './routes/auth.js';
 import domainsRouter from './routes/domains.js';
 import sslRouter from './routes/ssl.js';
@@ -20,10 +22,17 @@ const app = express();
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+// ─── Session secret — generated once, persisted in SQLite ────────────────────
+let sessionSecret = dbGet('session_secret');
+if (!sessionSecret) {
+  sessionSecret = crypto.randomBytes(32).toString('hex');
+  dbSet('session_secret', sessionSecret);
+}
 
 app.use(session({
-  secret: 'easy-devops-secret',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: { httpOnly: true },
