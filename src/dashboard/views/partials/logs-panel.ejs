@@ -1,0 +1,67 @@
+<!-- Logs Panel -->
+<div v-if="page === 'logs'">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h2 class="text-xl font-bold text-foreground">Nginx Logs</h2>
+      <p class="text-sm text-muted mt-1">Live streaming — last 500 lines</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <!-- Log file toggle -->
+      <div class="flex items-center gap-1 p-1 rounded-lg border border-border" style="background: var(--color-surface)">
+        <button @click="switchLog('error')"
+          class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all"
+          :class="logs.activeLog === 'error' ? 'bg-primary text-white' : 'text-muted hover:text-foreground'">
+          Error
+        </button>
+        <button @click="switchLog('access')"
+          class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all"
+          :class="logs.activeLog === 'access' ? 'bg-primary text-white' : 'text-muted hover:text-foreground'">
+          Access
+        </button>
+      </div>
+
+      <!-- Pause / Resume -->
+      <button @click="logs.paused = !logs.paused"
+        class="btn btn-secondary btn-sm flex items-center gap-1.5">
+        <svg v-if="!logs.paused" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+        </svg>
+        <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        {{ logs.paused ? 'Resume' : 'Pause' }}
+      </button>
+
+      <!-- Clear -->
+      <button @click="logs.lines = []" class="btn btn-secondary btn-sm">Clear</button>
+    </div>
+  </div>
+
+  <!-- Live indicator -->
+  <div class="flex items-center gap-2 mb-3">
+    <div class="w-2 h-2 rounded-full" :class="logs.paused ? 'bg-yellow-500' : 'bg-green-500 animate-pulse'"></div>
+    <span class="text-xs text-muted font-mono">
+      {{ logs.paused ? 'Paused' : 'Live' }} · {{ logs.activeLog }}.log · {{ logs.lines.length }} lines
+    </span>
+  </div>
+
+  <!-- Log output -->
+  <div class="rounded-xl border border-border overflow-hidden" style="background: #0d0d0d">
+    <div
+      id="log-output"
+      class="h-[calc(100vh-280px)] overflow-y-auto p-4 font-mono text-xs leading-relaxed"
+      style="color: #c8d3f5"
+      ref="logOutput">
+      <div v-if="!logs.lines.length" class="text-muted italic">
+        Waiting for log output…
+      </div>
+      <div v-for="(line, i) in logs.lines" :key="i"
+        class="whitespace-pre-wrap break-all py-0.5"
+        :class="{
+          'text-red-400': line.includes('[error]') || line.includes('[crit]') || line.includes('[emerg]'),
+          'text-yellow-400': line.includes('[warn]'),
+          'text-green-400': line.includes('200') || line.includes('304'),
+        }">{{ line }}</div>
+    </div>
+  </div>
+</div>

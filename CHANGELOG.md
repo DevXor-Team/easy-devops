@@ -5,6 +5,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.0] — 2026-04-08
+
+### Security
+
+- **Random session secret** — generated once via `crypto.randomBytes(32)`, stored in SQLite `session_secret` key. No more hardcoded string in source code.
+- **Request body size limit** — `express.json({ limit: '1mb' })` prevents oversized payload attacks.
+- **Login rate limiting** — `express-rate-limit` on `POST /login`: max 10 attempts per 15 minutes. Returns a clear error message when exceeded.
+
+### Fixed
+
+- **CLI detection spam** — `runDetection()` in `index.js` now caches results for 60 seconds. Subprocesses (`nginx -v`, `npm --version`, etc.) no longer run on every main menu return.
+- **Sessions survive restarts** — `session-file-store` persists sessions to `~/.config/easy-devops/sessions/` (Linux) or `%APPDATA%\easy-devops\sessions\` (Windows).
+
+### Added
+
+#### Notifications panel
+- Bell icon in the navbar with an unread badge counter.
+- Socket.io `notification:new` events emitted for: nginx down (every 5s status check), SSL cert expiring within 30 days (on connect + every 12 hours).
+- Sliding panel with type icons, severity colouring (warning/danger), and timestamps.
+- "Clear all" button; badge clears when panel is opened.
+
+#### Nginx log viewer (`Logs` page)
+- New dashboard page accessible from the sidebar.
+- Streams `tail -f` for `error.log` and `access.log` over Socket.io in real time.
+- Toggle between error and access log with a button group.
+- Auto-scrolls to newest line; Pause/Resume button to freeze output.
+- Colour-coded lines: red for `[error]`/`[crit]`, yellow for `[warn]`, green for 200/304.
+- Max 500 lines buffered in the UI; cleared on log switch.
+
+#### SSL certificate auto-renewal notifications
+- On dashboard connect and every 12 hours, all certs are scanned. Any cert expiring within 30 days emits a Socket.io notification that feeds into the bell panel.
+- Existing per-row "Renew" button and "Renew Expiring" batch button already present.
+
+#### Domain health check badges
+- Server polls each domain's `backendHost:port` via HTTP HEAD every 60 seconds.
+- `domain:health` Socket.io event updates the domains table live with green `● Up` / red `● Down` badges.
+- External URL backends (starting with `http`) are skipped.
+
+#### Backup & Restore (Settings page)
+- **Export**: downloads all config and domains as a JSON file. Dashboard password is excluded from the export.
+- **Import**: upload a JSON backup, confirm via SweetAlert2 dialog, restore config and domains. Page reloads data automatically after restore.
+- API: `GET /api/settings/backup`, `POST /api/settings/restore`.
+
+---
+
 ## [1.1.0] — 2026-04-06
 
 ### Fixed

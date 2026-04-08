@@ -7,6 +7,7 @@ import { loadConfig, saveConfig } from '../../core/config.js';
 import { validatePort, validateEmail } from '../../core/validators.js';
 import { run } from '../../core/shell.js';
 import { checkPermissionsConfigured } from '../../core/permissions.js';
+import { dbGet, dbSet } from '../../core/db.js';
 
 // Run a bash command with sudo -S (password read from stdin — no terminal needed)
 function runSudoS(bashCmd, password) {
@@ -189,6 +190,48 @@ router.post('/settings/permissions/setup', async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+// ─── GET /api/settings/backup ──────────────────────────────────────────────────
+
+router.get('/settings/backup', (req, res) => {
+  try {
+    const config = loadConfig();
+    const domains = dbGet('domains') || [];
+    const { dashboardPassword: _pw, ...safeConfig } = config; // exclude password from export
+    const backup = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      config: safeConfig,
+      domains,
+    };
+    res.setHeader('Content-Disposition', `attachment; filename="easy-devops-backup-${Date.now()}.json"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(backup);
+  } catch (err) {
+    res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+// ─── POST /api/settings/restore ────────────────────────────────────────────────
+
+router.post('/settings/restore', (req, res) => {
+  try {
+    const { config, domains } = req.body ?? {};
+    if (!config || typeof config !== 'object') {
+      return res.status(400).json({ error: 'Invalid backup: missing config' });
+    }
+    // Merge imported config with current (preserve password, merge rest)
+    const current = loadConfig();
+    const merged = { ...current, ...config, dashboardPassword: current.dashboardPassword };
+    saveConfig(merged);
+    if (Array.isArray(domains)) {
+      dbSet('domains', domains);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Restore failed' });
+  }
 });
 
 export default router;

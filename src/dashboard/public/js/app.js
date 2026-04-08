@@ -55,6 +55,7 @@ createApp({
         { id: 'nginx', label: 'Nginx', icon: '🌐' },
         { id: 'ssl', label: 'SSL Certs', icon: '🔒' },
         { id: 'domains', label: 'Domains', icon: '🔗' },
+        { id: 'logs', label: 'Logs', icon: '📋' },
         { id: 'settings', label: 'Settings', icon: '⚙️' },
       ],
 
@@ -78,6 +79,8 @@ createApp({
       },
 
       // T017-T019: Updated domains state
+      domainHealth: {}, // { [name]: true|false|null }
+
       domains: {
         list: [], loading: false, error: '',
         showForm: false,
@@ -103,6 +106,13 @@ createApp({
         advanced: false,
       },
 
+      logs: {
+        lines: [],
+        activeLog: 'error', // 'error' | 'access'
+        paused: false,
+        socket: null,
+      },
+
       settings: {
         dashboardPort: '', nginxDir: '', sslDir: '', acmeEmail: '',
         password: '', loading: false, msg: '', error: '',
@@ -111,6 +121,16 @@ createApp({
 
       permissions: {
         configured: false, loading: false, password: '', msg: '', error: '',
+      },
+
+      backup: {
+        restoring: false, msg: '', error: '',
+      },
+
+      notifications: {
+        items: [],      // { id, type, severity, message, domain?, timestamp }
+        panelOpen: false,
+        unread: 0,
       },
     };
   },
@@ -146,6 +166,15 @@ createApp({
     },
     sidebarCollapsed(val) {
       localStorage.setItem('ed-sidebar', val);
+    },
+
+    'logs.lines'() {
+      if (!this.logs.paused) {
+        this.$nextTick(() => {
+          const el = document.getElementById('log-output');
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      }
     },
 
     // T019: Deep watch form for dirty tracking
@@ -202,6 +231,21 @@ createApp({
     socket.on('nginx:status', (status) => {
       this.nginx.status = status;
     });
+    socket.on('notification:new', (n) => {
+      this.addNotification(n);
+    });
+    socket.on('domain:health', (results) => {
+      const map = {};
+      for (const r of results) map[r.name] = r.up;
+      this.domainHealth = map;
+    });
+    socket.on('logs:line', ({ line, logFile }) => {
+      if (!this.logs.paused && logFile === this.logs.activeLog) {
+        this.logs.lines.push(line);
+        if (this.logs.lines.length > 500) this.logs.lines.shift();
+      }
+    });
+    this.logs.socket = socket;
   },
 
   methods: {
@@ -251,6 +295,7 @@ createApp({
     },
 
     async loadPage(p) {
+      if (this.page === 'logs' && p !== 'logs') this.unsubscribeLogs();
       this.page = p;
       if (p === 'overview') {
         await Promise.all([this.loadNginxStatus(), this.loadSSL(), this.loadDomains()]);
@@ -258,6 +303,7 @@ createApp({
         await Promise.all([this.loadNginxStatus(), this.loadNginxConfigs(), this.loadNginxLogs()]);
       } else if (p === 'ssl') { await this.loadSSL(); }
       else if (p === 'domains') { await this.loadDomains(); }
+      else if (p === 'logs') { this.subscribeToLogs(this.logs.activeLog); }
       else if (p === 'settings') { await Promise.all([this.loadSettings(), this.loadPermissionsStatus()]); }
     },
 
@@ -727,6 +773,86 @@ createApp({
         this.permissions.password = '';
       } else {
         this.permissions.error = r.data?.error || 'Setup failed';
+      }
+    },
+
+    // ── Logs ──────────────────────────────────────────────────────────────────
+    subscribeToLogs(logFile) {
+      if (!this.logs.socket) return;
+      this.logs.lines = [];
+      this.logs.activeLog = logFile;
+      this.logs.paused = false;
+      this.logs.socket.emit('logs:subscribe', { logFile });
+    },
+    switchLog(logFile) {
+      this.subscribeToLogs(logFile);
+    },
+    unsubscribeLogs() {
+      if (this.logs.socket) this.logs.socket.emit('logs:unsubscribe');
+    },
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+    addNotification(n) {
+      // Deduplicate by id — replace if same id already exists
+      const idx = this.notifications.items.findIndex(i => i.id === n.id);
+      if (idx !== -1) {
+        this.notifications.items.splice(idx, 1, n);
+      } else {
+        this.notifications.items.unshift(n);
+        if (!this.notifications.panelOpen) this.notifications.unread++;
+      }
+    },
+    toggleNotificationsPanel() {
+      this.notifications.panelOpen = !this.notifications.panelOpen;
+      if (this.notifications.panelOpen) this.notifications.unread = 0;
+    },
+    clearNotifications() {
+      this.notifications.items = [];
+      this.notifications.unread = 0;
+    },
+    notifIcon(type) {
+      if (type === 'nginx_down') return '🔴';
+      if (type === 'cert_expiry') return '🔒';
+      if (type === 'domain_down') return '⚠️';
+      return '🔔';
+    },
+
+    // ── Backup & Restore ──────────────────────────────────────────────────────
+    exportBackup() {
+      window.location.href = '/api/settings/backup';
+    },
+    async importBackup(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      this.backup.msg = ''; this.backup.error = '';
+      let data;
+      try {
+        data = JSON.parse(await file.text());
+      } catch {
+        this.backup.error = 'Invalid file — could not parse JSON.';
+        event.target.value = '';
+        return;
+      }
+      const { isConfirmed } = await Swal.fire({
+        title: 'Restore backup?',
+        text: 'This will overwrite your current configuration and domains list.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Restore',
+        cancelButtonText: 'Cancel',
+        ...this.swalTheme,
+      });
+      event.target.value = '';
+      if (!isConfirmed) return;
+      this.backup.restoring = true;
+      const r = await this.api('POST', '/api/settings/restore', data);
+      this.backup.restoring = false;
+      if (r.ok) {
+        this.backup.msg = 'Restored successfully. Reload the page to see changes.';
+        await this.loadSettings();
+        await this.loadDomains();
+      } else {
+        this.backup.error = r.data?.error || 'Restore failed';
       }
     },
 

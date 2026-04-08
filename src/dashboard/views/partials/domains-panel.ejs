@@ -73,6 +73,10 @@
 SSL: {{ d.daysLeft != null ? d.daysLeft + 'd' : 'Wait' }}
 </span>
 <span v-else class="badge badge-neutral">HTTP Only</span>
+
+<!-- Backend Health Badge -->
+<span v-if="domainHealth[d.name] === true" class="badge badge-success" title="Backend reachable">● Up</span>
+<span v-else-if="domainHealth[d.name] === false" class="badge badge-danger" title="Backend unreachable">● Down</span>
 </div>
 
 <!-- Actions (appear on hover via .domain-actions in CSS) -->

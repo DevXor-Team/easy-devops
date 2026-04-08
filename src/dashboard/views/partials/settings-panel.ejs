@@ -66,6 +66,38 @@
 </div>
 </div>
 
+<!-- Backup & Restore card -->
+<div class="stat-card overflow-hidden relative mt-6">
+  <div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
+  <div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5">
+    <h3 class="form-label !mb-0 font-bold">Backup &amp; Restore</h3>
+    <p class="text-[11px] text-muted mt-1 font-bold tracking-wide uppercase opacity-70">Export or restore configuration and domains</p>
+  </div>
+  <div class="p-8 bg-background flex flex-col sm:flex-row gap-6">
+    <div class="flex-1">
+      <p class="text-sm text-muted mb-4">Export all settings and domains as a JSON file. Passwords are excluded from the export.</p>
+      <button @click="exportBackup" class="btn btn-secondary">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+        Export Backup
+      </button>
+    </div>
+    <div class="w-px bg-border hidden sm:block"></div>
+    <div class="flex-1">
+      <p class="text-sm text-muted mb-4">Restore configuration from a previously exported backup file.</p>
+      <label class="btn btn-secondary cursor-pointer" :class="backup.restoring ? 'opacity-50 pointer-events-none' : ''">
+        <svg v-if="backup.restoring" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+        <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12"></path></svg>
+        {{ backup.restoring ? 'Restoring...' : 'Import Backup' }}
+        <input type="file" accept=".json" class="hidden" @change="importBackup" :disabled="backup.restoring" />
+      </label>
+    </div>
+  </div>
+  <div v-if="backup.msg || backup.error" class="px-8 pb-6">
+    <span v-if="backup.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ backup.msg }}</span>
+    <span v-if="backup.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ backup.error }}</span>
+  </div>
+</div>
+
 <!-- Linux Permissions card (hidden on Windows) -->
 <div v-if="settings.platform !== 'win32'" class="stat-card overflow-hidden relative mt-6">
   <div class="absolute top-0 left-0 w-full h-1" :class="permissions.configured ? 'bg-green-500/40' : 'bg-yellow-500/40'"></div>

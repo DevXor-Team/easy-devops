@@ -473,6 +473,11 @@ animation: shimmer 1.5s ease infinite;
 .fade-enter-active, .fade-leave-active { transition: opacity 150ms ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
+.notif-panel-enter-active { transition: opacity 150ms ease, transform 150ms ease; }
+.notif-panel-leave-active { transition: opacity 100ms ease, transform 100ms ease; }
+.notif-panel-enter-from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+.notif-panel-leave-to { opacity: 0; transform: translateY(-4px) scale(0.98); }
+
 /* Login Page Styles */
 .login-card {
 background: var(--color-surface);
@@ -618,6 +623,52 @@ class="theme-accent-circle"
 </button>
 </div>
 
+<!-- Bell / Notifications -->
+<div class="relative">
+  <button @click="toggleNotificationsPanel"
+    class="relative p-1.5 text-muted hover:text-foreground transition-colors rounded-lg"
+    :class="notifications.panelOpen ? 'text-foreground' : ''">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+    </svg>
+    <span v-if="notifications.unread > 0"
+      class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center text-white"
+      style="background: var(--color-primary)">
+      {{ notifications.unread > 9 ? '9+' : notifications.unread }}
+    </span>
+  </button>
+
+  <!-- Sliding panel -->
+  <transition name="notif-panel">
+    <div v-if="notifications.panelOpen"
+      v-click-outside="() => { notifications.panelOpen = false; }"
+      class="absolute right-0 top-10 w-80 rounded-2xl border border-border shadow-2xl z-50 overflow-hidden"
+      style="background: var(--color-surface)">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+        <span class="text-sm font-bold">Notifications</span>
+        <button v-if="notifications.items.length" @click="clearNotifications"
+          class="text-xs text-muted hover:text-foreground transition-colors">Clear all</button>
+      </div>
+      <div class="max-h-72 overflow-y-auto">
+        <div v-if="!notifications.items.length" class="px-4 py-6 text-center text-sm text-muted">
+          All clear — no notifications
+        </div>
+        <div v-for="n in notifications.items" :key="n.id"
+          class="flex items-start gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-primary/[0.03] transition-colors">
+          <span class="text-base leading-none mt-0.5">{{ notifIcon(n.type) }}</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium leading-snug"
+              :class="n.severity === 'danger' ? 'text-red-400' : 'text-yellow-400'">
+              {{ n.message }}
+            </p>
+            <p class="text-[10px] text-muted mt-0.5">{{ new Date(n.timestamp).toLocaleTimeString() }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </transition>
+</div>
+
 <div class="w-px h-6 border-l border-border mx-1"></div>
 
 <!-- Theme Toggle -->
@@ -638,6 +689,7 @@ class="theme-accent-circle"
 <%- include('partials/ssl-panel.ejs') %>
 <%- include('partials/domains-panel.ejs') %>
 <%- include('partials/settings-panel.ejs') %>
+<%- include('partials/logs-panel.ejs') %>
 </div>
 </transition>
 </div>
