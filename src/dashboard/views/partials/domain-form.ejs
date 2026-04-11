@@ -324,7 +324,7 @@ Wildcard SSL requires DNS-01 validation.
 </div>
 
 <!-- Accordion Section: Advanced -->
-<div>
+<div class="border-b border-border">
 <div @click="toggleSection('advanced')" class="flex items-center justify-between p-5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
 <span class="form-label !mb-0 group-hover:text-foreground transition-colors">Advanced</span>
 <svg class="w-4 h-4 text-muted transition-transform duration-200" :class="{ 'rotate-180': sections.advanced }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
@@ -346,6 +346,69 @@ class="form-input font-mono text-[13px] leading-relaxed resize-y"
 placeholder="location /api/v2 {&#10; proxy_pass http://localhost:8080;&#10;}"></textarea>
 <p class="text-[11px] font-bold text-muted mt-2">Raw nginx location blocks (appended verbatim inside the server block)</p>
 </div>
+
+</div>
+</div>
+
+<!-- Accordion Section: Notifications (edit mode only) -->
+<div v-if="domains.editingName">
+<div @click="toggleSection('notifications')" class="flex items-center justify-between p-5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+<span class="form-label !mb-0 group-hover:text-foreground transition-colors">Notifications</span>
+<svg class="w-4 h-4 text-muted transition-transform duration-200" :class="{ 'rotate-180': sections.notifications }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+</div>
+<div v-show="sections.notifications" class="p-6 pt-4 space-y-5 border-t border-border/50" style="background: rgba(0,0,0,0.1)">
+
+<!-- No channels configured -->
+<div v-if="channels.list.length === 0" class="p-4 border border-border/50 rounded-[12px] text-center">
+<p class="text-muted text-[13px]">No channels configured —
+<button type="button" @click="navigateTo('settings')" class="text-primary underline">go to Settings</button>
+to add one first.</p>
+</div>
+
+<template v-else>
+
+<!-- Port / Health -->
+<div class="space-y-3">
+<div class="flex items-center gap-4">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.notifications.domain_health.enabled" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold text-foreground">Port / Health check</span>
+</div>
+<div v-if="domains.form.notifications.domain_health.enabled" class="pl-10 flex flex-wrap gap-2">
+<label v-for="ch in channels.list" :key="ch.id"
+  class="flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-[8px] border border-border/50 hover:border-primary/50 transition-colors text-[12px]">
+<input type="checkbox" :value="ch.id" v-model="domains.form.notifications.domain_health.channelIds" class="w-3.5 h-3.5 text-primary" />
+<span class="font-medium">{{ ch.name }}</span>
+<span class="text-muted text-[10px] opacity-70">({{ ch.type }})</span>
+</label>
+</div>
+</div>
+
+<div class="border-t border-border/50"></div>
+
+<!-- SSL / Certificate expiry -->
+<div class="space-y-3">
+<div class="flex items-center gap-4">
+<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+<input type="checkbox" v-model="domains.form.notifications.cert_expiry.enabled" class="sr-only peer" />
+<div class="w-8 h-4 bg-black/20 dark:bg-white/10 border border-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[13px] font-bold text-foreground">SSL / Certificate expiry</span>
+</div>
+<div v-if="domains.form.notifications.cert_expiry.enabled" class="pl-10 flex flex-wrap gap-2">
+<label v-for="ch in channels.list" :key="ch.id"
+  class="flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-[8px] border border-border/50 hover:border-primary/50 transition-colors text-[12px]">
+<input type="checkbox" :value="ch.id" v-model="domains.form.notifications.cert_expiry.channelIds" class="w-3.5 h-3.5 text-primary" />
+<span class="font-medium">{{ ch.name }}</span>
+<span class="text-muted text-[10px] opacity-70">({{ ch.type }})</span>
+</label>
+</div>
+</div>
+
+
+</template>
 
 </div>
 </div>

@@ -1,133 +1,277 @@
 <!-- Settings Page -->
 <div v-show="page === 'settings'" class="w-full max-w-4xl pb-12">
-<div class="flex items-center justify-between mb-8">
-<div>
-<h2 class="text-2xl font-bold tracking-tight text-foreground">Settings</h2>
-<p class="text-muted font-medium text-sm mt-1">Dashboard configuration and service paths</p>
-</div>
-</div>
+	<div class="flex items-center justify-between mb-8">
+		<div>
+			<h2 class="text-2xl font-bold tracking-tight text-foreground">Settings</h2>
+			<p class="text-muted font-medium text-sm mt-1">Dashboard configuration and service paths</p>
+		</div>
+	</div>
 
-<div class="stat-card overflow-hidden relative">
-<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
-<div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5">
-<h3 class="form-label !mb-0 font-bold">Application configuration</h3>
-</div>
+	<!-- Tab Navigation -->
+	<div class="flex gap-1 mb-6 p-1 bg-black/5 dark:bg-white/5 rounded-[10px] border border-border/50">
+		<button
+			@click="settingsTab = 'general'"
+			class="flex-1 px-4 py-2.5 text-sm font-semibold rounded-[8px] transition-all"
+			:class="settingsTab === 'general'
+				? 'bg-primary text-white shadow-sm'
+				: 'text-muted hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'">
+			⚙️ General Settings
+		</button>
+		<button
+			@click="settingsTab = 'notifications'"
+			class="flex-1 px-4 py-2.5 text-sm font-semibold rounded-[8px] transition-all"
+			:class="settingsTab === 'notifications'
+				? 'bg-primary text-white shadow-sm'
+				: 'text-muted hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'">
+			🔔 Notifications
+		</button>
+	</div>
 
-<div class="p-8 space-y-10 bg-background">
-<div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
+	<!-- Tab Content: General Settings -->
+	<div v-show="settingsTab === 'general'" class="space-y-6">
 
-<div class="w-full">
-<label class="form-label">Dashboard Port</label>
-<input v-model.number="settings.dashboardPort" type="number" class="form-input" placeholder="6443" />
-<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Restart dashboard after changing</p>
-</div>
+		<!-- Application Configuration Card -->
+		<div class="stat-card overflow-hidden relative">
+			<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
+			<div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5">
+				<h3 class="form-label !mb-0 font-bold">Application configuration</h3>
+			</div>
 
-<div class="w-full">
-<label class="form-label">ACME Email (Let's Encrypt)</label>
-<input v-model="settings.acmeEmail" type="email" class="form-input" placeholder="admin@example.com" />
-<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Required for certificate issuance</p>
-</div>
+			<div class="p-8 space-y-10 bg-background">
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
 
-<div class="w-full">
-<label class="form-label">Nginx Directory</label>
-<input v-model="settings.nginxDir" class="form-input font-mono text-[13px]" placeholder="/etc/nginx" />
-<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Where nginx.conf is located</p>
-</div>
+					<div class="w-full">
+						<label class="form-label">Dashboard Port</label>
+						<input v-model.number="settings.dashboardPort" type="number" class="form-input" placeholder="6443" />
+						<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Restart dashboard after changing</p>
+					</div>
 
-<div class="w-full">
-<label class="form-label">SSL Settings Directory</label>
-<input v-model="settings.sslDir" class="form-input font-mono text-[13px]" placeholder="/etc/nginx/ssl" />
-<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Directory for default SSL certs</p>
-</div>
+					<div class="w-full">
+						<label class="form-label">ACME Email (Let's Encrypt)</label>
+						<input v-model="settings.acmeEmail" type="email" class="form-input" placeholder="admin@example.com" />
+						<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Required for certificate issuance</p>
+					</div>
 
-</div>
+					<div class="w-full">
+						<label class="form-label">Nginx Directory</label>
+						<input v-model="settings.nginxDir" class="form-input font-mono text-[13px]" placeholder="/etc/nginx" />
+						<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Where nginx.conf is located</p>
+					</div>
 
-<div class="border-t border-border/50 pt-10">
-<div class="w-full max-w-md">
-<label class="form-label">New Password</label>
-<input v-model="settings.password" type="password" class="form-input" placeholder="Leave blank to keep current" />
-</div>
-</div>
+					<div class="w-full">
+						<label class="form-label">SSL Settings Directory</label>
+						<input v-model="settings.sslDir" class="form-input font-mono text-[13px]" placeholder="/etc/nginx/ssl" />
+						<p class="text-[11px] text-muted mt-2 font-bold tracking-wide uppercase opacity-70">Directory for default SSL certs</p>
+					</div>
 
-</div>
+				</div>
 
-<!-- Actions area -->
-<div class="p-5 border-t border-border bg-black/5 dark:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-<div class="flex items-center gap-3">
-<button @click="saveSettings" :disabled="settings.loading" class="btn btn-primary min-w-[140px] shadow-sm">
-<svg v-if="settings.loading" class="w-4 h-4 animate-spin -ml-1 mr-2 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-{{ settings.loading ? 'Saving...' : 'Save Settings' }}
-</button>
-</div>
-<div>
-<span v-if="settings.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ settings.msg }}</span>
-<span v-if="settings.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ settings.error }}</span>
-</div>
-</div>
-</div>
+				<div class="border-t border-border/50 pt-10">
+					<div class="w-full max-w-md">
+						<label class="form-label">New Password</label>
+						<input v-model="settings.password" type="password" class="form-input" placeholder="Leave blank to keep current" />
+					</div>
+				</div>
 
-<!-- Backup & Restore card -->
-<div class="stat-card overflow-hidden relative mt-6">
-  <div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
-  <div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5">
-    <h3 class="form-label !mb-0 font-bold">Backup &amp; Restore</h3>
-    <p class="text-[11px] text-muted mt-1 font-bold tracking-wide uppercase opacity-70">Export or restore configuration and domains</p>
-  </div>
-  <div class="p-8 bg-background flex flex-col sm:flex-row gap-6">
-    <div class="flex-1">
-      <p class="text-sm text-muted mb-4">Export all settings and domains as a JSON file. Passwords are excluded from the export.</p>
-      <button @click="exportBackup" class="btn btn-secondary">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-        Export Backup
-      </button>
-    </div>
-    <div class="w-px bg-border hidden sm:block"></div>
-    <div class="flex-1">
-      <p class="text-sm text-muted mb-4">Restore configuration from a previously exported backup file.</p>
-      <label class="btn btn-secondary cursor-pointer" :class="backup.restoring ? 'opacity-50 pointer-events-none' : ''">
-        <svg v-if="backup.restoring" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-        <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12"></path></svg>
-        {{ backup.restoring ? 'Restoring...' : 'Import Backup' }}
-        <input type="file" accept=".json" class="hidden" @change="importBackup" :disabled="backup.restoring" />
-      </label>
-    </div>
-  </div>
-  <div v-if="backup.msg || backup.error" class="px-8 pb-6">
-    <span v-if="backup.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ backup.msg }}</span>
-    <span v-if="backup.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ backup.error }}</span>
-  </div>
-</div>
+			</div>
 
-<!-- Linux Permissions card (hidden on Windows) -->
-<div v-if="settings.platform !== 'win32'" class="stat-card overflow-hidden relative mt-6">
-  <div class="absolute top-0 left-0 w-full h-1" :class="permissions.configured ? 'bg-green-500/40' : 'bg-yellow-500/40'"></div>
-  <div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5 flex items-center justify-between">
-    <div>
-      <h3 class="form-label !mb-0 font-bold">Linux Permissions</h3>
-      <p class="text-[11px] text-muted mt-1 font-bold tracking-wide uppercase opacity-70">Passwordless sudo for nginx and systemctl</p>
-    </div>
-    <span v-if="permissions.configured" class="text-green-500 text-xs font-bold px-2.5 py-1 rounded-lg bg-green-500/10 border border-green-500/20">✓ Configured</span>
-    <span v-else class="text-yellow-500 text-xs font-bold px-2.5 py-1 rounded-lg bg-yellow-500/10 border border-yellow-500/20">⚠ Required</span>
-  </div>
-  <div class="p-8 bg-background">
-    <p v-if="permissions.configured" class="text-sm text-muted">Passwordless sudo is configured. The dashboard can manage nginx and systemctl without prompting for a password.</p>
-    <div v-else>
-      <p class="text-sm text-muted mb-6">The dashboard needs passwordless sudo to control nginx and systemctl. Enter your sudo password once to configure it.</p>
-      <div class="w-full max-w-md">
-        <label class="form-label">Sudo Password</label>
-        <input v-model="permissions.password" type="password" class="form-input" placeholder="Enter your sudo password" @keyup.enter="setupPermissions" />
-      </div>
-    </div>
-  </div>
-  <div v-if="!permissions.configured" class="p-5 border-t border-border bg-black/5 dark:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-    <button @click="setupPermissions" :disabled="permissions.loading || !permissions.password" class="btn btn-primary min-w-[180px] shadow-sm">
-      <svg v-if="permissions.loading" class="w-4 h-4 animate-spin -ml-1 mr-2 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-      {{ permissions.loading ? 'Setting up...' : 'Setup Permissions' }}
-    </button>
-    <div>
-      <span v-if="permissions.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ permissions.msg }}</span>
-      <span v-if="permissions.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ permissions.error }}</span>
-    </div>
-  </div>
-</div>
+			<!-- Actions area -->
+			<div class="p-5 border-t border-border bg-black/5 dark:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+				<div class="flex items-center gap-3">
+					<button @click="saveSettings" :disabled="settings.loading" class="btn btn-primary min-w-[140px] shadow-sm">
+						<svg v-if="settings.loading" class="w-4 h-4 animate-spin -ml-1 mr-2 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+						{{ settings.loading ? 'Saving...' : 'Save Settings' }}
+					</button>
+				</div>
+				<div>
+					<span v-if="settings.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ settings.msg }}</span>
+					<span v-if="settings.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ settings.error }}</span>
+				</div>
+			</div>
+		</div>
+
+		<!-- Backup & Restore card -->
+		<div class="stat-card overflow-hidden relative">
+			<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
+			<div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5">
+				<h3 class="form-label !mb-0 font-bold">Backup &amp; Restore</h3>
+				<p class="text-[11px] text-muted mt-1 font-bold tracking-wide uppercase opacity-70">Export or restore configuration and domains</p>
+			</div>
+			<div class="p-8 bg-background flex flex-col sm:flex-row gap-6">
+				<div class="flex-1">
+					<p class="text-sm text-muted mb-4">Export all settings and domains as a JSON file. Passwords are excluded from the export.</p>
+					<button @click="exportBackup" class="btn btn-secondary">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+						Export Backup
+					</button>
+				</div>
+				<div class="w-px bg-border hidden sm:block"></div>
+				<div class="flex-1">
+					<p class="text-sm text-muted mb-4">Restore configuration from a previously exported backup file.</p>
+					<label class="btn btn-secondary cursor-pointer" :class="backup.restoring ? 'opacity-50 pointer-events-none' : ''">
+						<svg v-if="backup.restoring" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+						<svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12"></path></svg>
+						{{ backup.restoring ? 'Restoring...' : 'Import Backup' }}
+						<input type="file" accept=".json" class="hidden" @change="importBackup" :disabled="backup.restoring" />
+					</label>
+				</div>
+			</div>
+			<div v-if="backup.msg || backup.error" class="px-8 pb-6">
+				<span v-if="backup.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ backup.msg }}</span>
+				<span v-if="backup.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ backup.error }}</span>
+			</div>
+		</div>
+
+		<!-- Linux Permissions card (hidden on Windows) -->
+		<div v-if="settings.platform !== 'win32'" class="stat-card overflow-hidden relative">
+			<div class="absolute top-0 left-0 w-full h-1" :class="permissions.configured ? 'bg-green-500/40' : 'bg-yellow-500/40'"></div>
+			<div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5 flex items-center justify-between">
+				<div>
+					<h3 class="form-label !mb-0 font-bold">Linux Permissions</h3>
+					<p class="text-[11px] text-muted mt-1 font-bold tracking-wide uppercase opacity-70">Passwordless sudo for nginx and systemctl</p>
+				</div>
+				<span v-if="permissions.configured" class="text-green-500 text-xs font-bold px-2.5 py-1 rounded-lg bg-green-500/10 border border-green-500/20">✓ Configured</span>
+				<span v-else class="text-yellow-500 text-xs font-bold px-2.5 py-1 rounded-lg bg-yellow-500/10 border border-yellow-500/20">⚠ Required</span>
+			</div>
+			<div class="p-8 bg-background">
+				<p v-if="permissions.configured" class="text-sm text-muted">Passwordless sudo is configured. The dashboard can manage nginx and systemctl without prompting for a password.</p>
+				<div v-else>
+					<p class="text-sm text-muted mb-6">The dashboard needs passwordless sudo to control nginx and systemctl. Enter your sudo password once to configure it.</p>
+					<div class="w-full max-w-md">
+						<label class="form-label">Sudo Password</label>
+						<input v-model="permissions.password" type="password" class="form-input" placeholder="Enter your sudo password" @keyup.enter="setupPermissions" />
+					</div>
+				</div>
+			</div>
+			<div v-if="!permissions.configured" class="p-5 border-t border-border bg-black/5 dark:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+				<button @click="setupPermissions" :disabled="permissions.loading || !permissions.password" class="btn btn-primary min-w-[180px] shadow-sm">
+					<svg v-if="permissions.loading" class="w-4 h-4 animate-spin -ml-1 mr-2 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+					{{ permissions.loading ? 'Setting up...' : 'Setup Permissions' }}
+				</button>
+				<div>
+					<span v-if="permissions.msg" class="text-green-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-green-500/10 border border-green-500/20">{{ permissions.msg }}</span>
+					<span v-if="permissions.error" class="text-red-500 text-[13px] font-bold px-3 py-1.5 rounded-[10px] bg-red-500/10 border border-red-500/20">{{ permissions.error }}</span>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Tab Content: Notifications -->
+	<div v-show="settingsTab === 'notifications'" class="space-y-6">
+
+		<!-- Notification Channels card -->
+		<div class="stat-card overflow-hidden relative">
+			<div class="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
+			<div class="p-6 border-b border-border/50 bg-black/5 dark:bg-white/5 flex items-center justify-between">
+				<div>
+					<h3 class="form-label !mb-0 font-bold">Notification Channels</h3>
+					<p class="text-[11px] text-muted mt-1 font-bold tracking-wide uppercase opacity-70">Named Discord and Telegram channels — assign to domains per event</p>
+				</div>
+				<button @click="openAddChannel()" class="btn btn-primary btn-sm shrink-0">+ Add Channel</button>
+			</div>
+
+			<div class="p-6 bg-background">
+				<div v-if="channels.loading" class="text-muted text-sm py-4 text-center">Loading...</div>
+
+				<div v-else-if="channels.list.length === 0" class="text-center py-10">
+					<p class="text-muted text-sm">No channels configured yet.</p>
+					<p class="text-muted text-xs mt-1 opacity-70">Add a Discord webhook or Telegram bot to start receiving notifications.</p>
+				</div>
+
+				<div v-else class="space-y-3">
+					<div v-for="ch in channels.list" :key="ch.id"
+						class="flex items-center justify-between p-4 border border-border/60 rounded-[12px] bg-black/5 dark:bg-white/5">
+						<div class="flex items-center gap-3 min-w-0">
+							<span class="text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0"
+								:class="ch.type === 'discord' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-sky-500/20 text-sky-400'">
+								{{ ch.type === 'discord' ? 'Discord' : 'Telegram' }}
+							</span>
+							<span class="text-sm font-semibold text-foreground truncate">{{ ch.name }}</span>
+							<span v-if="ch.message" class="text-[10px] text-muted opacity-60 truncate">{{ ch.message.substring(0, 30) }}{{ ch.message.length > 30 ? '...' : '' }}</span>
+						</div>
+						<div class="flex items-center gap-2 shrink-0 ml-3">
+							<span v-if="channels.testResults[ch.id]?.msg" class="text-green-500 text-xs font-medium">{{ channels.testResults[ch.id].msg }}</span>
+							<span v-if="channels.testResults[ch.id]?.error" class="text-red-500 text-xs font-medium">{{ channels.testResults[ch.id].error }}</span>
+							<button @click="testChannelById(ch.id)" :disabled="channels.testingId === ch.id" class="btn btn-secondary btn-sm">
+								<svg v-if="channels.testingId === ch.id" class="w-3 h-3 animate-spin inline-block mr-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+								Test
+							</button>
+							<button @click="openEditChannel(ch)" class="btn btn-secondary btn-sm">Edit</button>
+							<button @click="deleteChannel(ch.id)" class="btn btn-danger btn-sm">Delete</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Channel Add/Edit Modal -->
+	<div v-if="channelModal.open" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 modal-overlay">
+		<div class="relative w-full max-w-lg flex flex-col modal-card">
+			<div class="flex items-center justify-between p-5 border-b border-border shrink-0" style="background: rgba(0,0,0,0.1)">
+				<h3 class="font-bold text-[15px] text-foreground tracking-tight">
+					{{ channelModal.editing ? 'Edit Channel' : 'Add Channel' }}
+				</h3>
+				<button @click="channelModal.open = false" class="btn btn-secondary btn-sm">Cancel</button>
+			</div>
+			<div class="p-6 space-y-5 bg-background">
+
+				<div>
+					<label class="form-label">Name</label>
+					<input v-model="channelModal.form.name" type="text" class="form-input" placeholder="e.g. Production Discord" />
+				</div>
+
+				<div v-if="!channelModal.editing">
+					<label class="form-label">Type</label>
+					<div class="flex gap-6">
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input type="radio" v-model="channelModal.form.type" value="discord" class="text-primary" />
+							<span class="text-sm font-bold">Discord</span>
+						</label>
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input type="radio" v-model="channelModal.form.type" value="telegram" class="text-primary" />
+							<span class="text-sm font-bold">Telegram</span>
+						</label>
+					</div>
+				</div>
+
+				<div v-if="channelModal.form.type === 'discord'">
+					<label class="form-label">Webhook URL</label>
+					<input v-model="channelModal.form.webhookUrl" type="text" class="form-input font-mono text-sm" placeholder="https://discord.com/api/webhooks/..." />
+				</div>
+
+				<template v-if="channelModal.form.type === 'telegram'">
+					<div>
+						<label class="form-label">Bot Token</label>
+						<input v-model="channelModal.form.botToken" type="text" class="form-input font-mono text-sm" placeholder="123456:ABCdef..." />
+					</div>
+					<div>
+						<label class="form-label">Chat ID</label>
+						<input v-model="channelModal.form.chatId" type="text" class="form-input font-mono text-sm" placeholder="100123456789" />
+					</div>
+				</template>
+
+				<!-- Message Prefix Field (Discord only) -->
+				<div v-if="channelModal.form.type === 'discord'">
+					<label class="form-label">Message Prefix <span class="text-muted font-normal">(optional)</span></label>
+					<input v-model="channelModal.form.message" type="text" class="form-input" placeholder="e.g. <@&1280907071813976196> or @team" />
+					<div class="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-[8px]">
+						<p class="text-[11px] text-muted">
+							💡 <span class="font-semibold text-foreground">Tip:</span> To mention a Discord role, use <code class="px-1 py-0.5 bg-black/10 dark:bg-white/10 rounded text-[10px]">&lt;@&amp;RoleId&gt;</code>
+							<span class="opacity-70">— Example: <code class="px-1 py-0.5 bg-black/10 dark:bg-white/10 rounded text-[10px]">&lt;@&amp;1280907071813976196&gt;</code> will ping that role on every alert.</span>
+						</p>
+					</div>
+				</div>
+
+				<p v-if="channelModal.error" class="text-red-500 text-[13px] font-semibold">{{ channelModal.error }}</p>
+			</div>
+			<div class="p-5 border-t border-border bg-black/5 dark:bg-white/5 flex justify-end gap-3">
+				<button @click="channelModal.open = false" class="btn btn-secondary">Cancel</button>
+				<button @click="saveChannel()" :disabled="channelModal.saving" class="btn btn-primary min-w-[100px]">
+					<svg v-if="channelModal.saving" class="w-4 h-4 animate-spin -ml-1 mr-2 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+					{{ channelModal.saving ? 'Saving...' : 'Save' }}
+				</button>
+			</div>
+		</div>
+	</div>
 </div>

@@ -6,17 +6,18 @@
  * All modules must use this utility instead of calling child_process APIs directly.
  *
  * Exported functions:
- *   - getShell()              — Returns OS-resolved shell descriptor { shell, flag }
- *   - run(cmd, options)       — Executes a command and captures output; never throws
- *   - runLive(cmd, options)   — Executes a command, streaming output to the terminal; never throws
- *   - runInteractive(cmd, options) — Executes a command with full stdio inheritance (Linux only); never throws
+ * - getShell() — Returns OS-resolved shell descriptor { shell, flag }
+ * - run(cmd, options) — Executes a command and captures output; never throws
+ * - runLive(cmd, options) — Executes a command, streaming output to the terminal; never throws
+ * - runInteractive(cmd, options) — Executes a command with full stdio inheritance (Linux only); never throws
+ * - runWithStdin(cmd, argsArray, stdinData) — Spawns a process with stdin piping; never throws
  *
  * CommandResult shape (returned by run()):
- *   { success: boolean, stdout: string, stderr: string, exitCode: number|null, command: string }
+ * { success: boolean, stdout: string, stderr: string, exitCode: number|null, command: string }
  *
  * CommandOptions (accepted by run() and runLive()):
- *   { timeout?: number, cwd?: string }
- *   Defaults: timeout = 30 000 ms, cwd = process.cwd()
+ * { timeout?: number, cwd?: string }
+ * Defaults: timeout = 30 000 ms, cwd = process.cwd()
  */
 
 import { spawn } from 'child_process';
@@ -182,6 +183,57 @@ export function runInteractive(cmd, options = {}) {
 
     child.on('error', (err) => {
       resolve({ success: false, exitCode: null });
+    });
+  });
+}
+
+// ─── runWithStdin ─────────────────────────────────────────────────────────────
+
+/**
+ * Spawns a process directly (no shell wrapper) and pipes data to its stdin.
+ * Intended for commands like `sudo -S` that read input from stdin.
+ *
+ * Never throws. The returned Promise always resolves with a CommandResult.
+ *
+ * @param {string} cmd - The executable to spawn (e.g. 'sudo').
+ * @param {string[]} argsArray - Arguments passed directly to the executable.
+ * @param {string} [stdinData=''] - String to pipe to the process stdin.
+ * @returns {Promise<{ success: boolean, stdout: string, stderr: string, exitCode: number|null, command: string }>}
+ */
+export function runWithStdin(cmd, argsArray, stdinData = '') {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, argsArray, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    let stdoutBuf = '';
+    let stderrBuf = '';
+
+    child.stdout.on('data', (chunk) => { stdoutBuf += chunk; });
+    child.stderr.on('data', (chunk) => { stderrBuf += chunk; });
+
+    child.stdin.write(stdinData);
+    child.stdin.end();
+
+    child.on('close', (exitCode) => {
+      resolve({
+        success: exitCode === 0,
+        stdout: stripAnsi(stdoutBuf).trim(),
+        stderr: stripAnsi(stderrBuf).trim(),
+        exitCode,
+        command: cmd,
+      });
+    });
+
+    child.on('error', (err) => {
+      resolve({
+        success: false,
+        stdout: '',
+        stderr: err.message,
+        exitCode: null,
+        command: cmd,
+      });
     });
   });
 }

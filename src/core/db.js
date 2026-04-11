@@ -41,7 +41,14 @@ try {
 let db;
 
 function createDbConnection() {
-  return new GoodDB(new SQLiteDriver({ path: DB_PATH }));
+  return new GoodDB(new SQLiteDriver({ path: DB_PATH }), {
+    nested: "..",
+    nestedIsEnabled: true,
+    cache: {
+      capacity: 1024,
+      isEnabled: true,
+    }
+  });
 }
 
 try {

@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { loadConfig } from '../../core/config.js';
+import AuthController from '../controllers/authController.js';
 
 const router = Router();
+const controller = new AuthController();
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -12,28 +13,8 @@ const loginLimiter = rateLimit({
   message: { ok: false, error: 'Too many login attempts. Try again in 15 minutes.' },
 });
 
-router.post('/login', loginLimiter, (req, res) => {
-  const { password } = req.body;
-  const { dashboardPassword } = loadConfig();
-  if (password === dashboardPassword) {
-    req.session.authenticated = true;
-    res.json({ ok: true });
-  } else {
-    res.status(401).json({ ok: false, error: 'Invalid password' });
-  }
-});
-
-router.get('/auth', (req, res) => {
-  if (req.session.authenticated === true) {
-    res.json({ authenticated: true });
-  } else {
-    res.json({ authenticated: false });
-  }
-});
-
-router.post('/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ ok: true });
-});
+router.post('/login', loginLimiter, (req, res, next) => controller.login(req, res, next));
+router.get('/auth', (req, res, next) => controller.check(req, res, next));
+router.post('/logout', (req, res, next) => controller.logout(req, res, next));
 
 export default router;

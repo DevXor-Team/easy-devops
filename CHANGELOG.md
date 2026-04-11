@@ -5,48 +5,86 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.2.0] — 2026-04-08
-
-### Security
-
-- **Random session secret** — generated once via `crypto.randomBytes(32)`, stored in SQLite `session_secret` key. No more hardcoded string in source code.
-- **Request body size limit** — `express.json({ limit: '1mb' })` prevents oversized payload attacks.
-- **Login rate limiting** — `express-rate-limit` on `POST /login`: max 10 attempts per 15 minutes. Returns a clear error message when exceeded.
-
-### Fixed
-
-- **CLI detection spam** — `runDetection()` in `index.js` now caches results for 60 seconds. Subprocesses (`nginx -v`, `npm --version`, etc.) no longer run on every main menu return.
-- **Sessions survive restarts** — `session-file-store` persists sessions to `~/.config/easy-devops/sessions/` (Linux) or `%APPDATA%\easy-devops\sessions\` (Windows).
+## [1.2.0] — 2026-04-10
 
 ### Added
 
-#### Notifications panel
+#### Notification Channel Registry
+- New **named channel system** — Discord webhooks and Telegram bots are registered once in Settings → Notifications with a name and UUID. Channels are stored in SQLite under `notification_channels` and reused across any number of domains and event types.
+- **Settings → Notifications tab** — settings page split into General and Notifications tabs. The Notifications tab lists all configured channels with Test / Edit / Delete actions per row.
+- **Channel CRUD API** — five new endpoints under `/api/settings/channels`:
+  - `GET` list all channels
+  - `POST` create a channel (generates UUID, validates type-specific fields)
+  - `PUT /:id` update name or credentials (type is immutable after creation)
+  - `DELETE /:id` remove a channel
+  - `POST /:id/test` send a live test notification to a single channel
+- **Discord message prefix** — optional "Message Prefix" field on Discord channels. Value is sent as the `content` field of the webhook (not inside the embed), so role mentions like `<@&RoleId>` are resolved by Discord correctly.
+
+#### Per-Domain Notification Config
+- Domain edit form gains a **Notifications accordion** section showing two event types: `cert_expiry` (SSL certificate expiry) and `domain_health` (backend port check). Each event has an enable toggle and a channel checkbox list.
+- `nginx_down` is intentionally absent from per-domain config — it is a global event and is routed using the union of all configured channel IDs across all domains.
+- Per-domain config stored in SQLite under `domain_notification_config`. Default is enabled with no external channels (dashboard-only).
+- API: `GET /api/domains/:name/notifications` and `PUT /api/domains/:name/notifications`.
+- Domain list and create/update responses now include a `notifications` field.
+
+#### Notification State Tracking (deduplication + recovery)
+- `shouldSendNotification(domain, eventType, currentStatus)` in `core/domainNotifier.js` implements a state machine that prevents repeated alerts for the same condition.
+- **First check**: records baseline state, sends no notification.
+- **Down**: sends alert only on the `up → down` transition.
+- **Still down**: no repeated notification.
+- **Recovery**: sends a "back online" notification on the `down → up` transition.
+- State persisted in SQLite under `notification_state` — survives server restarts.
+
+#### Recovery Notifications
+- `createNginxRecoveredEvent()` in `core/events.js` — `severity: 'success'`, used when nginx comes back up.
+- `createDomainDownEvent(domain, port)` and `createDomainRecoveredEvent(domain, port)` — carry the backend port in the message for clarity.
+- Both Discord and Telegram render recovery events with distinct messaging from down events.
+
+#### Dashboard Notifications Panel (base)
 - Bell icon in the navbar with an unread badge counter.
-- Socket.io `notification:new` events emitted for: nginx down (every 5s status check), SSL cert expiring within 30 days (on connect + every 12 hours).
-- Sliding panel with type icons, severity colouring (warning/danger), and timestamps.
-- "Clear all" button; badge clears when panel is opened.
+- Socket.io `notification:new` events for: nginx status, SSL cert expiry (within 30 days), domain health.
+- Sliding notification panel with severity colouring and timestamps. "Clear all" button. Badge resets when the panel is opened.
+- Deduplication by event `id` — replacing the same event in place instead of appending duplicates.
 
-#### Nginx log viewer (`Logs` page)
-- New dashboard page accessible from the sidebar.
-- Streams `tail -f` for `error.log` and `access.log` over Socket.io in real time.
-- Toggle between error and access log with a button group.
-- Auto-scrolls to newest line; Pause/Resume button to freeze output.
-- Colour-coded lines: red for `[error]`/`[crit]`, yellow for `[warn]`, green for 200/304.
-- Max 500 lines buffered in the UI; cleared on log switch.
+#### Nginx Log Viewer (`Logs` page)
+- New sidebar page. Streams `tail -f` over Socket.io for `error.log` and `access.log`.
+- Toggle between logs with a button group; auto-scroll to newest line; Pause/Resume.
+- Colour-coded output: red for `[error]`/`[crit]`, yellow for `[warn]`, green for 2xx/304.
+- Max 500 lines buffered; cleared on log switch.
 
-#### SSL certificate auto-renewal notifications
-- On dashboard connect and every 12 hours, all certs are scanned. Any cert expiring within 30 days emits a Socket.io notification that feeds into the bell panel.
-- Existing per-row "Renew" button and "Renew Expiring" batch button already present.
-
-#### Domain health check badges
+#### Domain Health Check Badges
 - Server polls each domain's `backendHost:port` via HTTP HEAD every 60 seconds.
-- `domain:health` Socket.io event updates the domains table live with green `● Up` / red `● Down` badges.
+- Live green `● Up` / red `● Down` badges in the domains table.
 - External URL backends (starting with `http`) are skipped.
+- Health check failures emit `notification:new` to the browser panel and dispatch to configured external channels.
 
-#### Backup & Restore (Settings page)
-- **Export**: downloads all config and domains as a JSON file. Dashboard password is excluded from the export.
-- **Import**: upload a JSON backup, confirm via SweetAlert2 dialog, restore config and domains. Page reloads data automatically after restore.
-- API: `GET /api/settings/backup`, `POST /api/settings/restore`.
+#### Backup & Restore
+- **Export**: `GET /api/settings/backup` — downloads config and domains as JSON. Dashboard password excluded.
+- **Import**: `POST /api/settings/restore` — restores config and domains from a backup file. Confirmed via SweetAlert2 dialog.
+
+### Changed
+
+- **`core/events.js`** — added `createNginxRecoveredEvent()`, `createDomainDownEvent(domain, port)`, `createDomainRecoveredEvent(domain, port)`. Existing `createDomainHealthEvent` kept as a legacy wrapper. All event IDs are now unique per emission (timestamp suffix) to prevent false deduplication.
+- **`socketManager.js`** — nginx and domain health handlers rewritten to use `shouldSendNotification()` for state-aware dispatch. `getAllDomainChannelIds(eventType)` used for global events (nginx_down) instead of a null-domain lookup that always returned empty.
+- **`core/notifier.js`** — rewritten to the named-channel model. `sendNotification(event, channelIds)` resolves each UUID to a channel object and dispatches to the matching `channels/{type}.js` module. Empty or null `channelIds` is a no-op (dashboard-only path).
+- **`core/domainNotifier.js`** — replaced type-name arrays with UUID arrays (`channelIds`). Added `getAllDomainChannelIds(eventType)` (union across all domains) and `shouldSendNotification` state machine.
+- **Discord channel** — message prefix routed to webhook `content` field instead of embed description, enabling Discord mention resolution.
+- **Routes refactored into controllers** — `dashboard/routes/domains.js` and `dashboard/routes/settings.js` extracted into `dashboard/controllers/domainsController.js` and `dashboard/controllers/settingsController.js`.
+- **Settings page** — split into "General Settings" and "Notifications" tabs via `settingsTab` state.
+
+### Security
+
+- **Random session secret** — generated once via `crypto.randomBytes(32)`, stored in SQLite `session_secret` key.
+- **Request body size limit** — `express.json({ limit: '1mb' })`.
+- **Login rate limiting** — `express-rate-limit` on `POST /login`: max 10 attempts per 15 minutes.
+
+### Fixed
+
+- **Domain health notifications never fired** — `emitDomainHealth` only emitted the `domain:health` socket event for UI badges; it never called `sendNotification` or emitted `notification:new`. Both are now called for every down domain.
+- **nginx_down never reached external channels** — `getEffectiveChannelIds(null, 'nginx_down')` always returned `[]` because a `null` domain falls back to defaults which have empty `channelIds`. Replaced with `getAllDomainChannelIds('nginx_down')` which unions channel IDs from all domain configs.
+- **CLI detection spam** — `runDetection()` now caches results for 60 seconds. Subprocesses (`nginx -v`, `npm --version`, etc.) no longer run on every main menu return.
+- **Sessions survive restarts** — `session-file-store` persists sessions to disk.
+- **Vue data() return object truncated** — a duplicate closing brace in `app.js` caused `permissions`, `backup`, `channels`, `channelModal`, and `notifications` to be declared outside the `data()` return object, making them non-reactive. Fixed by removing the extra brace.
 
 ---
 

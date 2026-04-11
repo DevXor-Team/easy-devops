@@ -37,6 +37,11 @@ const DEFAULT_FORM = {
     accessLog: true,
     customLocations: '',
   },
+  notifications: {
+    domain_health: { enabled: true, channelIds: [] },
+    cert_expiry:   { enabled: true, channelIds: [] },
+    nginx_down:    { enabled: true, channelIds: [] },
+  },
 };
 
 createApp({
@@ -104,6 +109,7 @@ createApp({
         performance: false,
         security: false,
         advanced: false,
+        notifications: false,
       },
 
       logs: {
@@ -118,6 +124,7 @@ createApp({
         password: '', loading: false, msg: '', error: '',
         platform: 'linux', // T022: Platform from settings API
       },
+      settingsTab: 'general', // 'general' | 'notifications'
 
       permissions: {
         configured: false, loading: false, password: '', msg: '', error: '',
@@ -125,6 +132,20 @@ createApp({
 
       backup: {
         restoring: false, msg: '', error: '',
+      },
+
+      channels: {
+        list: [],
+        loading: false,
+        testingId: null,
+        testResults: {},
+      },
+      channelModal: {
+        open: false,
+        editing: null, // null = add new, string = channel id being edited
+        form: { name: '', type: 'discord', webhookUrl: '', botToken: '', chatId: '', message: '' },
+        saving: false,
+        error: '',
       },
 
       notifications: {
@@ -304,7 +325,7 @@ createApp({
       } else if (p === 'ssl') { await this.loadSSL(); }
       else if (p === 'domains') { await this.loadDomains(); }
       else if (p === 'logs') { this.subscribeToLogs(this.logs.activeLog); }
-      else if (p === 'settings') { await Promise.all([this.loadSettings(), this.loadPermissionsStatus()]); }
+      else if (p === 'settings') { await Promise.all([this.loadSettings(), this.loadPermissionsStatus(), this.loadChannels()]); }
     },
 
     // ── Collapsible Sections ────────────────────────────────────────────
@@ -482,7 +503,9 @@ createApp({
         if (!isConfirmed) return;
       }
       this.domains.showForm = !this.domains.showForm;
-      if (!this.domains.showForm) {
+      if (this.domains.showForm) {
+        await this.loadChannels();
+      } else {
         this.resetDomainForm();
       }
     },
@@ -504,6 +527,7 @@ createApp({
         performance: false,
         security: false,
         advanced: false,
+        notifications: false,
       };
     },
 
@@ -520,6 +544,9 @@ createApp({
         });
         if (!isConfirmed) return;
       }
+
+      // Ensure channels are loaded for the notifications section
+      await this.loadChannels();
 
       // Fetch domain data
       const r = await this.api('GET', `/api/domains`);
@@ -570,6 +597,11 @@ createApp({
           accessLog: domain.advanced?.accessLog ?? true,
           customLocations: domain.advanced?.customLocations || '',
         },
+        notifications: {
+          domain_health: domain.notifications?.domain_health ?? { enabled: true, channelIds: [] },
+          cert_expiry:   domain.notifications?.cert_expiry   ?? { enabled: true, channelIds: [] },
+          nginx_down:    domain.notifications?.nginx_down    ?? { enabled: true, channelIds: [] },
+        },
       };
 
       this.domains.editingName = name;
@@ -583,6 +615,7 @@ createApp({
         performance: true,
         security: true,
         advanced: true,
+        notifications: true,
       };
     },
 
@@ -763,6 +796,13 @@ createApp({
       if (r.ok) this.permissions.configured = r.data.configured;
     },
 
+    async loadChannels() {
+      this.channels.loading = true;
+      const r = await this.api('GET', '/api/settings/channels');
+      this.channels.loading = false;
+      if (r.ok) this.channels.list = Array.isArray(r.data) ? r.data : [];
+    },
+
     async setupPermissions() {
       this.permissions.loading = true; this.permissions.msg = ''; this.permissions.error = '';
       const r = await this.api('POST', '/api/settings/permissions/setup', { password: this.permissions.password });
@@ -869,6 +909,72 @@ createApp({
       this.settings.loading = false;
       if (r.ok) { this.settings.msg = 'Settings saved ✓'; this.settings.password = ''; }
       else { this.settings.error = r.data.error || 'Save failed'; }
+    },
+
+    openAddChannel() {
+      this.channelModal.editing = null;
+      this.channelModal.form = { name: '', type: 'discord', webhookUrl: '', botToken: '', chatId: '', message: '' };
+      this.channelModal.error = '';
+      this.channelModal.open = true;
+    },
+
+    openEditChannel(channel) {
+      this.channelModal.editing = channel.id;
+      this.channelModal.form = {
+        name: channel.name,
+        type: channel.type,
+        webhookUrl: channel.webhookUrl || '',
+        botToken: channel.botToken || '',
+        chatId: channel.chatId || '',
+			message: channel.message || '',
+      };
+      this.channelModal.error = '';
+      this.channelModal.open = true;
+    },
+
+    async saveChannel() {
+      this.channelModal.saving = true;
+      this.channelModal.error = '';
+      const { name, type, webhookUrl, botToken, chatId, message } = this.channelModal.form;
+      const payload = { name, type, webhookUrl, botToken, chatId, message };
+      const r = this.channelModal.editing
+        ? await this.api('PUT', `/api/settings/channels/${this.channelModal.editing}`, payload)
+        : await this.api('POST', '/api/settings/channels', payload);
+      this.channelModal.saving = false;
+      if (r.ok) {
+        this.channelModal.open = false;
+        await this.loadChannels();
+      } else {
+        this.channelModal.error = r.data.error || 'Save failed';
+      }
+    },
+
+    async deleteChannel(id) {
+      const { isConfirmed } = await Swal.fire({
+        title: 'Delete channel?',
+        text: 'This cannot be undone.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel',
+        ...this.swalTheme,
+      });
+      if (!isConfirmed) return;
+      await this.api('DELETE', `/api/settings/channels/${id}`);
+      await this.loadChannels();
+    },
+
+    async testChannelById(id) {
+      this.channels.testingId = id;
+      this.channels.testResults = { ...this.channels.testResults, [id]: { msg: '', error: '' } };
+      const r = await this.api('POST', `/api/settings/channels/${id}/test`);
+      this.channels.testingId = null;
+      this.channels.testResults = {
+        ...this.channels.testResults,
+        [id]: r.ok
+          ? { msg: 'Test sent ✓', error: '' }
+          : { msg: '', error: r.data.error || 'Test failed' },
+      };
     },
   },
 })
