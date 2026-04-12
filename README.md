@@ -110,7 +110,7 @@ npx easy-devops
 ### CLI Overview
 
 ```
-  ███████╗███████╗     Easy DevOps  v1.1.0
+  ███████╗███████╗     Easy DevOps  v1.2.1
   ██╔════╝╚════██╗     ─────────────────────
   █████╗      ██╔╝     CLI & Web Dashboard
   ██╔══╝     ██╔╝      Nginx · SSL · Domains · Node.js

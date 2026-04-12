@@ -76,7 +76,7 @@ export async function getDashboardStatus() {
   const pidAlive   = isPidAlive(storedPid);
   const responding = pidAlive && await httpPing(storedPort, 1000);
 
-  if (storedPid && !pidAlive) {
+  if (storedPid && !responding) {
     dbSet('dashboard-pid',  null);
     dbSet('dashboard-port', null);
   }
